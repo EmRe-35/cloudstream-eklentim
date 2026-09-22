@@ -1,6 +1,6 @@
 {
-  "name": "HD Film Cehennemi Reposu",
-  "description": "hdfilmcehennemi.nl Cloudstream eklentisi",
+  "name": "EmRe-35 Cloudstream Eklentileri",
+  "description": "Custom Cloudstream Provider Repository",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/EmRe-35/cloudstream-eklentim/builds/plugins.json"

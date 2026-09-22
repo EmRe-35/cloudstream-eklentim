@@ -1,0 +1,9 @@
+<resources>
+    <!-- Ana uygulamanızın stili/teması -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        
+        <!-- Eklenmesi gereken satır -->
+        <item name="colorControlNormal">#FFFFFF</item>
+
+    </style>
+</resources>

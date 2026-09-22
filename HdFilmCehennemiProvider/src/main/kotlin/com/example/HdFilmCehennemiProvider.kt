@@ -104,40 +104,29 @@ class HdFilmCehennemiProvider : MainAPI() {
         var found = false
 
         try {
-            val document = app.get(data, headers = headers).document
-
-            // 1. Doğrudan sayfadaki tüm iframe ve player veri özniteliklerini topla
-            val sources = mutableListOf<String>()
+            val response = app.get(data, headers = headers)
+            val document = response.document
 
             document.select("iframe, [data-src], [data-video], [data-player], nav.card-nav a, div.video-options a").forEach { el ->
-                val src = el.attr("src")
+                var src = el.attr("src")
                     .ifEmpty { el.attr("data-src") }
                     .ifEmpty { el.attr("data-video") }
                     .ifEmpty { el.attr("data-player") }
                     .ifEmpty { el.attr("href") }
 
                 if (src.isNotBlank() && !src.startsWith("#") && !src.contains("javascript:")) {
-                    sources.add(src)
-                }
-            }
+                    if (src.startsWith("//")) src = "https:$src"
+                    if (!src.startsWith("http")) src = "$mainUrl$src"
 
-            // 2. Bulunan URL adreslerini düzelt ve Extractor mekanizmasına gönder
-            for (rawUrl in sources.distinct()) {
-                var fullUrl = rawUrl.trim()
-                if (fullUrl.startsWith("//")) fullUrl = "https:$fullUrl"
-                if (!fullUrl.startsWith("http")) fullUrl = "$mainUrl$fullUrl"
-
-                // Reklam veya alakasız linkleri filtrele
-                if (fullUrl.contains("/kategori/") || fullUrl.contains("/imdb/") || fullUrl.contains("facebook.com")) continue
-
-                // Cloudstream'in dahili Extractor'ları ile video bağlantısını yakala
-                val extracted = loadExtractor(fullUrl, data, subtitleCallback, callback)
-                if (extracted) {
-                    found = true
+                    if (!src.contains("/kategori/") && !src.contains("/imdb/")) {
+                        if (loadExtractor(src, data, subtitleCallback, callback)) {
+                            found = true
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
-            println("HDFilmCehennemi HATA: ${e.localizedMessage}")
+            println("HDFilmCehennemi HATA: ${e.message}")
         }
 
         return found

@@ -1,1 +1,52 @@
+name: Eklentiyi Derle ve Yayınla
 
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: JDK kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Gradle'ı kur
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.4"
+
+      - name: Eklentileri derle (.cs3 üretir)
+        run: gradle make
+
+      - name: plugins.json üret
+        run: gradle makePluginsJson
+
+      - name: Derlenen dosyaları 'builds' branch'ine yayınla
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+          git checkout --orphan builds-temp
+          git rm -rf . > /dev/null 2>&1 || true
+
+          mkdir -p out
+          find . -name "*.cs3" -exec cp {} out/ \;
+          cp plugins.json out/ 2>/dev/null || true
+
+          rm -rf $(ls -A | grep -v out)
+          mv out/* .
+          rmdir out
+
+          git add -A
+          git commit -m "Otomatik derleme: ${{ github.sha }}"
+          git push origin builds-temp:builds --force

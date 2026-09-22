@@ -1,2 +1,2 @@
 rootProject.name = "CloudstreamPlugins"
-include(":ArchiveOrgProvider")
+include(":HdFilmCehennemiProvider")

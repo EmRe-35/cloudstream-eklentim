@@ -1,5 +1,5 @@
 // Eklenti sınıf tanımı cloudstream bloğunun DIŞINDA olmalı
-val pluginClass = "com.example.HdFilmCehennemiProvider"
+val pluginClass = "com.example.HdFilmCehennemiPlugin"
 
 version = 1
 

@@ -19,27 +19,19 @@ class HdFilmCehennemiProvider : MainAPI() {
     private val headers = mapOf(
         "User-Agent" to userAgent,
         "Referer" to "$mainUrl/",
-        "X-Requested-With" to "XMLHttpRequest",
-        "Accept" to "*/*"
+        "X-Requested-With" to "XMLHttpRequest"
     )
 
-    // 1. Ana Sayfa (Tüm Liste)
+    // 1. Ana Sayfa
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
-        val res = app.get(url, headers = headers)
-        val document = res.document
-        val homePages = mutableListOf<HomePageList>()
+        val document = app.get(url, headers = headers).document
 
-        // Sitedeki tüm poster kartlarını (grid, slider, sidebar) yakala
         val allItems = document.select("a.poster, article, div.poster, div.movie-box, div.card, a[href*='/film/'], a[href*='/dizi/']").mapNotNull { element: Element ->
             element.toSearchResult()
         }.distinctBy { it.url }
 
-        if (allItems.isNotEmpty()) {
-            homePages.add(HomePageList("Son Eklenenler", allItems))
-        }
-
-        return newHomePageResponse(homePages)
+        return newHomePageResponse(listOf(HomePageList("Son Eklenenler", allItems)))
     }
 
     // 2. Arama
@@ -53,11 +45,7 @@ class HdFilmCehennemiProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        var href = if (this.tagName() == "a") {
-            this.attr("href")
-        } else {
-            this.selectFirst("a")?.attr("href")
-        } ?: return null
+        var href = if (this.tagName() == "a") this.attr("href") else this.selectFirst("a")?.attr("href") ?: return null
 
         if (href.isBlank() || href == "#" || href.contains("/kategori/") || href.contains("/imdb/") || href.contains("/sayfa/")) return null
         if (!href.startsWith("http")) href = "$mainUrl$href"
@@ -68,23 +56,8 @@ class HdFilmCehennemiProvider : MainAPI() {
         if (title.isEmpty()) return null
 
         val imgEl = this.selectFirst("img")
-        var posterUrl: String? = null
-        if (imgEl != null) {
-            val dataSrc = imgEl.attr("data-src").trim()
-            val dataLazySrc = imgEl.attr("data-lazy-src").trim()
-            val src = imgEl.attr("src").trim()
-            
-            posterUrl = when {
-                dataSrc.isNotEmpty() -> dataSrc
-                dataLazySrc.isNotEmpty() -> dataLazySrc
-                src.isNotEmpty() -> src
-                else -> null
-            }
-        }
-
-        if (posterUrl != null && !posterUrl.startsWith("http")) {
-            posterUrl = "$mainUrl$posterUrl"
-        }
+        var posterUrl = imgEl?.attr("data-src")?.ifEmpty { imgEl.attr("src") }
+        if (posterUrl != null && !posterUrl.startsWith("http")) posterUrl = "$mainUrl$posterUrl"
 
         val isTvSeries = href.contains("/dizi/")
         val type = if (isTvSeries) TvType.TvSeries else TvType.Movie
@@ -100,13 +73,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         val title = document.selectFirst("h1, header h1")?.text()?.trim() ?: "İçerik"
         val imgEl = document.selectFirst("div.poster img, article img, img.cover")
         
-        var poster: String? = null
-        if (imgEl != null) {
-            val dataSrc = imgEl.attr("data-src").trim()
-            val src = imgEl.attr("src").trim()
-            poster = if (dataSrc.isNotEmpty()) dataSrc else src
-        }
-
+        val poster = imgEl?.attr("data-src")?.ifEmpty { imgEl.attr("src") }
         val plot = document.selectFirst("div.post-content, p.story, div.overview, div.description")?.text()?.trim()
         val isTvSeries = url.contains("/dizi/")
 
@@ -131,47 +98,58 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Bağlantılarını Çekme (Hem Static HTML Hem AJAX Taraması)
+    // 4. Yeni Yöntem: Bütün Alternatif Player Endpoint'lerini Çözme
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val res = app.get(data, headers = headers)
-        val document = res.document
+        val response = app.get(data, headers = headers)
+        val document = response.document
         var found = false
 
-        // A) Doğrudan iframe ve embed linklerini tara
-        val elements = document.select("iframe[src], iframe[data-src], div[data-video], button[data-video], li[data-video]")
-        for (el in elements) {
-            var src = el.attr("src").ifEmpty { el.attr("data-src") }.ifEmpty { el.attr("data-video") }.trim()
-            
-            if (src.startsWith("//")) src = "https:$src"
+        val urlsToTest = mutableListOf<String>()
 
-            if (src.isNotEmpty() && !src.contains("facebook") && !src.contains("google") && !src.contains("disqus")) {
-                if (loadExtractor(src, data, subtitleCallback, callback)) {
-                    found = true
-                }
+        // Yöntem A: Sitedeki tab/player butonlarındaki 'data-id', 'data-embed' veya 'data-url' özniteliklerini topla
+        document.select("[data-id], [data-embed], [data-url], [data-video], button, a.nav-link").forEach { el ->
+            val dataUrl = el.attr("data-url").ifEmpty { el.attr("data-embed") }.ifEmpty { el.attr("data-video") }
+            if (dataUrl.isNotEmpty()) {
+                urlsToTest.add(dataUrl)
             }
         }
 
-        // B) Eğer statik iframe bulunamadıysa Sitenin Player AJAX isteklerini tara
-        if (!found) {
-            val scripts = document.select("script")
-            for (script in scripts) {
-                val code = script.html()
-                if (code.contains("eval") || code.contains("player") || code.contains("iframe")) {
-                    // Script içindeki gizlenmiş video URL'lerini yakala
-                    val regex = Regex("""(https?://[^\s"'<>]*(?:player|embed|video|v)[^\s"'<>]*)""")
-                    val matches = regex.findAll(code)
-                    for (match in matches) {
-                        val videoUrl = match.value
-                        if (loadExtractor(videoUrl, data, subtitleCallback, callback)) {
+        // Yöntem B: Tüm iframe'lerin varsayılan ve lazy-load linklerini al
+        document.select("iframe").forEach { iframe ->
+            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+            if (src.isNotEmpty()) urlsToTest.add(src)
+        }
+
+        // Bulunan URL'leri işle
+        for (rawUrl in urlsToTest.distinct()) {
+            var targetUrl = rawUrl.trim()
+            if (targetUrl.startsWith("//")) targetUrl = "https:$targetUrl"
+            if (!targetUrl.startsWith("http")) targetUrl = "$mainUrl$targetUrl"
+
+            // Filtreleme (gereksiz sosyal medya/reklam linklerini atla)
+            if (targetUrl.contains("facebook") || targetUrl.contains("google") || targetUrl.contains("disqus")) continue
+
+            // Eğer yönlendirilen sayfa doğrudan bir video oynatıcı ise Extractor'a gönder
+            if (loadExtractor(targetUrl, data, subtitleCallback, callback)) {
+                found = true
+            } else {
+                // Eğer doğrudan çözülemediyse, bu embed sayfasının içine girip içindeki asıl iframe'i ara
+                try {
+                    val subDoc = app.get(targetUrl, headers = mapOf("Referer" to data, "User-Agent" to userAgent)).document
+                    val innerIframe = subDoc.selectFirst("iframe")?.attr("src")
+                    if (!innerIframe.isNullOrEmpty()) {
+                        var finalUrl = innerIframe
+                        if (finalUrl.startsWith("//")) finalUrl = "https:$finalUrl"
+                        if (loadExtractor(finalUrl, targetUrl, subtitleCallback, callback)) {
                             found = true
                         }
                     }
-                }
+                } catch (_: Exception) { }
             }
         }
 

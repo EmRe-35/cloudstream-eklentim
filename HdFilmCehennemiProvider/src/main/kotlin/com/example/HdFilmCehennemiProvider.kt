@@ -183,15 +183,15 @@ class HdFilmCehennemiProvider : MainAPI() {
                 document.title()
             )?.trim() ?: "Bilinmeyen içerik"
 
-            val poster = document
-                .selectFirst(
-                    "meta[property=og:image], " +
-                        "div.poster img, " +
-                        ".poster img, " +
-                        ".movie-poster img, " +
-                        "article img"
-                )
-                ?.let {
+            val posterElement: Element? = document.selectFirst(
+               "meta[property=og:image], " +
+               "div.poster img, " +
+               ".poster img, " +
+               ".movie-poster img, " +
+               "article img"
+         )
+
+            val poster: String? = posterElement?
                     firstNonBlank(
                         it.attr("content"),
                         it.attr("data-src"),

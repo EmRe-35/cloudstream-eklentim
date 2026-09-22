@@ -38,7 +38,7 @@ jobs:
         run: |
           mkdir -p /tmp/cs-out
           find . -name "*.cs3" -exec cp {} /tmp/cs-out/ \;
-          cp plugins.json /tmp/cs-out/ 2>/dev/null || true
+          find . -name "plugins.json" -not -path "*/node_modules/*" -exec cp {} /tmp/cs-out/ \;
 
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"

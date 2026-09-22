@@ -14,30 +14,16 @@ class HdFilmCehennemiProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    // 1. Ana Sayfa (Birden Fazla Sekme/Kategori)
+    // 1. Ana Sayfa
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(mainUrl).document
-        val homePages = mutableListOf<HomePageList>()
+        val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
+        val document = app.get(url).document
 
-        // Son Eklenenler
-        val recentItems = document.select("a.poster, div.poster, article.poster, div.card, div.movie-box, article").mapNotNull { element ->
+        val items = document.select("a.poster, div.poster, article.poster, div.card, div.movie-box, article").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
 
-        if (recentItems.isNotEmpty()) {
-            homePages.add(HomePageList("Son Eklenenler", recentItems))
-        }
-
-        // Popüler Filmler (Sitede Varsa)
-        val popularItems = document.select("div.popular-slider a, div.top-movies a, div.sidebar-poster").mapNotNull { element ->
-            element.toSearchResult()
-        }.distinctBy { it.url }
-
-        if (popularItems.isNotEmpty()) {
-            homePages.add(HomePageList("Popüler", popularItems))
-        }
-
-        return newHomePageResponse(homePages)
+        return newHomePageResponse("Son Eklenenler", items)
     }
 
     // 2. Arama
@@ -143,7 +129,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantılarını Çekme (Düzeltildi)
+    // 4. Video Oynatıcı Bağlantılarını Çekme (AJAX & Embed Uyarlaması)
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -152,24 +138,27 @@ class HdFilmCehennemiProvider : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
         var found = false
+        val extractedUrls = mutableListOf<String>()
 
-        // 1. Tüm Player Tabları ve iframe Linkleri
-        val iframeUrls = mutableListOf<String>()
-
-        document.select("iframe, div.video-container iframe, div.player-container iframe").forEach { iframe ->
+        // A. Doğrudan HTML içindeki tüm iframe'leri tara
+        document.select("iframe").forEach { iframe ->
             val src = iframe.attr("src").trim().ifEmpty { iframe.attr("data-src").trim() }
-            if (src.isNotEmpty()) iframeUrls.add(src)
+            if (src.isNotEmpty()) extractedUrls.add(src)
         }
 
-        // Alternatif Player Butonları / Tabları
-        document.select("nav.player-tabs button, nav.player-tabs a, div.alternative-links a, [data-video], [data-url]").forEach { element ->
-            val videoUrl = element.attr("data-video").trim().ifEmpty { element.attr("data-url").trim().ifEmpty { element.attr("href").trim() } }
-            if (videoUrl.isNotEmpty() && videoUrl != "#" && !videoUrl.startsWith("javascript")) {
-                iframeUrls.add(videoUrl)
+        // B. Sitedeki Player Tab / Alternatif Kaynak Butonlarını Tara
+        document.select("[data-video], [data-url], [data-post], [data-id], .player-tab, nav.player-tabs a").forEach { el ->
+            val videoAttr = el.attr("data-video").trim()
+                .ifEmpty { el.attr("data-url").trim() }
+                .ifEmpty { el.attr("href").trim() }
+
+            if (videoAttr.isNotEmpty() && videoAttr != "#" && !videoAttr.startsWith("javascript")) {
+                extractedUrls.add(videoAttr)
             }
         }
 
-        for (rawUrl in iframeUrls.distinct()) {
+        // C. Elde edilen tüm bağlantıları çözümleyicilere (Extractor) gönder
+        for (rawUrl in extractedUrls.distinct()) {
             var url = rawUrl
             if (url.startsWith("//")) {
                 url = "https:$url"
@@ -177,24 +166,25 @@ class HdFilmCehennemiProvider : MainAPI() {
                 url = "$mainUrl$url"
             }
 
-            // Extractor'lara Gönder (Vidmoly, Rapidrame, Doodstream, Hqq vb.)
+            // Cloudstream'in yerleşik extractor'larını çalıştır (Vidmoly, Rapidrame vb.)
             val loaded = loadExtractor(url, data, subtitleCallback, callback)
             if (loaded) {
                 found = true
             } else {
-                // Doğrudan .mp4 veya .m3u8 linkiyse
-                if (url.contains(".mp4") || url.contains(".m3u8")) {
-                    callback(
-                        ExtractorLink(
-                            source = this.name,
-                            name = this.name,
-                            url = url,
-                            referer = "$mainUrl/",
-                            quality = Qualities.Unknown.value,
-                            type = if (url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                        )
-                    )
-                    found = true
+                // Eğer dönen bağlantı bir embed/player sayfası ise o sayfayı da indirip içindeki iframe'i tara
+                if (url.contains("hdfilmcehennemi") || url.contains("player") || url.contains("embed")) {
+                    runCatching {
+                        val embedDoc = app.get(url, referer = "$mainUrl/").document
+                        embedDoc.select("iframe").forEach { innerIframe ->
+                            var innerSrc = innerIframe.attr("src").trim().ifEmpty { innerIframe.attr("data-src").trim() }
+                            if (innerSrc.startsWith("//")) innerSrc = "https:$innerSrc"
+                            if (innerSrc.isNotEmpty()) {
+                                if (loadExtractor(innerSrc, url, subtitleCallback, callback)) {
+                                    found = true
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

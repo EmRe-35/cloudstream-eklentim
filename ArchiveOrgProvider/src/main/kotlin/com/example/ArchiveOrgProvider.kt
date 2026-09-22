@@ -1,9 +1,9 @@
 package com.example
 
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.json.JSONObject
+import java.net.URLEncoder
 
 class ArchiveOrgProvider : MainAPI() {
     override var mainUrl = "https://archive.org"
@@ -44,12 +44,12 @@ class ArchiveOrgProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-    val id = url
-    val metaUrl = "https://archive.org/metadata/$id"
-    val json = JSONObject(app.get(metaUrl).text)
-    val metadata = json.optJSONObject("metadata") ?: JSONObject()
-    val title = metadata.optString("title", id)
-    val description = metadata.optString("description", "")
+        val id = url
+        val metaUrl = "https://archive.org/metadata/$id"
+        val json = JSONObject(app.get(metaUrl).text)
+        val metadata = json.optJSONObject("metadata") ?: JSONObject()
+        val title = metadata.optString("title", id)
+        val description = metadata.optString("description", "")
 
         return newMovieLoadResponse(title, url, TvType.Movie, id) {
             this.posterUrl = "https://archive.org/services/img/$id"
@@ -65,27 +65,41 @@ class ArchiveOrgProvider : MainAPI() {
     ): Boolean {
         val id = data
         val metaUrl = "https://archive.org/metadata/$id"
-        val json = JSONObject(app.get(metaUrl).text)
+        val responseText = app.get(metaUrl).text
+        val json = JSONObject(responseText)
         val files = json.optJSONArray("files") ?: return false
 
         var found = false
         for (i in 0 until files.length()) {
             val file = files.getJSONObject(i)
-            val name = file.getString("name")
-            if (name.endsWith(".mp4", ignoreCase = true) || 
-                name.endsWith(".mkv", ignoreCase = true) || 
-                name.endsWith(".webm", ignoreCase = true)) {
-                val videoUrl = "https://archive.org/download/$id/$name"
+            val fileName = file.optString("name", "")
+            
+            if (fileName.endsWith(".mp4", ignoreCase = true) || 
+                fileName.endsWith(".mkv", ignoreCase = true) || 
+                fileName.endsWith(".webm", ignoreCase = true)) {
+                
+                // Dosya adındaki boşluk ve özel karakterleri URL formatına dönüştürüyoruz
+                val encodedFileName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20")
+                val videoUrl = "https://archive.org/download/$id/$encodedFileName"
+                
+                // Kalite tespiti (dosya adında veya formatta 720p, 1080p vb. geçiyorsa ayarlayabilirsiniz)
+                val quality = when {
+                    fileName.contains("1080p", ignoreCase = true) -> Qualities.P1080.value
+                    fileName.contains("720p", ignoreCase = true) -> Qualities.P720.value
+                    fileName.contains("480p", ignoreCase = true) -> Qualities.P480.value
+                    else -> Qualities.Unknown.value
+                }
+
                 callback(
-    newExtractorLink(
-        source = name,
-        name = name,
-        url = videoUrl
-    ) {
-        this.referer = mainUrl
-        this.quality = Qualities.Unknown.value
-    }
-)
+                    ExtractorLink(
+                        source = this.name,
+                        name = fileName,
+                        url = videoUrl,
+                        referer = "$mainUrl/",
+                        quality = quality,
+                        type = ExtractorLinkType.VIDEO // Cloudstream'in direkt video dosyası olduğunu anlamasını sağlar
+                    )
+                )
                 found = true
             }
         }

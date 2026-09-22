@@ -2,7 +2,6 @@ package com.example
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.network.CloudflareKiller
 import org.jsoup.nodes.Element
 
 class HdFilmCehennemiProvider : MainAPI() {
@@ -17,29 +16,19 @@ class HdFilmCehennemiProvider : MainAPI() {
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-    private val cfInterceptor = CloudflareKiller()
-
     private val headers = mapOf(
         "User-Agent" to userAgent,
         "Referer" to "$mainUrl/",
         "Accept-Language" to "tr-TR,tr;q=0.9"
     )
 
-    private suspend fun getWithCf(url: String): NiceResponse {
-        return app.get(
-            url = url,
-            headers = headers,
-            interceptor = cfInterceptor
-        )
-    }
-
     // 1. Ana Sayfa
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
-        val document = getWithCf(url).document
+        val document = app.get(url, headers = headers).document
         val homePages = mutableListOf<HomePageList>()
 
-        val allItems = document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card, div.content-box a").mapNotNull { element ->
+        val allItems = document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card, div.content-box a").mapNotNull { element: Element ->
             element.toSearchResult()
         }.distinctBy { it.url }
 
@@ -53,9 +42,9 @@ class HdFilmCehennemiProvider : MainAPI() {
     // 2. Arama
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/search/$query"
-        val document = getWithCf(searchUrl).document
+        val document = app.get(searchUrl, headers = headers).document
 
-        return document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card").mapNotNull { element ->
+        return document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card").mapNotNull { element: Element ->
             element.toSearchResult()
         }.distinctBy { it.url }
     }
@@ -104,7 +93,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
     // 3. Detay Sayfası
     override suspend fun load(url: String): LoadResponse {
-        val document = getWithCf(url).document
+        val document = app.get(url, headers = headers).document
         val title = document.selectFirst("h1, header h1")?.text()?.trim() ?: "Film"
         val imgEl = document.selectFirst("div.poster img, article img")
         
@@ -139,14 +128,14 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantılarını Çözme
+    // 4. Video Oynatıcı Bağlantıları
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = getWithCf(data).document
+        val document = app.get(data, headers = headers).document
         var found = false
 
         val iframes = document.select("iframe[src], iframe[data-src]")

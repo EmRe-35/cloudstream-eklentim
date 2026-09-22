@@ -14,24 +14,54 @@ class HdFilmCehennemiProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    // 1. Ana Sayfa
+    // Sitenin Cloudflare veya Referer engeline takılmaması için varsayılan başlıklar
+    private val headers = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Referer" to "$mainUrl/"
+    )
+
+    // 1. Ana Sayfa (Tüm Kategoriler ve Çoklu Listeleme)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
-        val document = app.get(url).document
+        val document = app.get(url, headers = headers).document
+        val homePages = mutableListOf<HomePageList>()
 
-        val items = document.select("a.poster, div.poster, article.poster, div.card, div.movie-box, article").mapNotNull { element ->
+        // A. Son Eklenenler (Ana Vitrin)
+        val recentItems = document.select("article, div.card, div.poster, a.poster, div.movie-box, div.post").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
 
-        return newHomePageResponse("Son Eklenenler", items)
+        if (recentItems.isNotEmpty()) {
+            homePages.add(HomePageList("Son Eklenen Filmler", recentItems))
+        }
+
+        // B. Tavsiye / Öne Çıkan Filmler
+        val featuredItems = document.select("div.slider-item, div.recommend-box a, div.top-movies a, div.featured-item").mapNotNull { element ->
+            element.toSearchResult()
+        }.distinctBy { it.url }
+
+        if (featuredItems.isNotEmpty()) {
+            homePages.add(HomePageList("Tavsiye Filmler", featuredItems))
+        }
+
+        // C. IMDb 7+ Filmler / Trendler
+        val topItems = document.select("div.sidebar-item a, div.imdb-list a, div.widget-content a").mapNotNull { element ->
+            element.toSearchResult()
+        }.distinctBy { it.url }
+
+        if (topItems.isNotEmpty()) {
+            homePages.add(HomePageList("Popüler & IMDb 7+", topItems))
+        }
+
+        return newHomePageResponse(homePages)
     }
 
-    // 2. Arama
+    // 2. Arama Yapma
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/search/$query"
-        val document = app.get(searchUrl).document
+        val document = app.get(searchUrl, headers = headers).document
 
-        return document.select("a.poster, div.poster, article.poster, div.card, div.movie-box, article").mapNotNull { element ->
+        return document.select("article, div.card, div.poster, a.poster, div.movie-box, div.post").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
     }
@@ -43,7 +73,7 @@ class HdFilmCehennemiProvider : MainAPI() {
             this.selectFirst("a")?.attr("href")
         } ?: return null
 
-        if (href.isBlank() || href == "#") return null
+        if (href.isBlank() || href == "#" || href.contains("/kategori/") || href.contains("/imdb/")) return null
         if (!href.startsWith("http")) {
             href = "$mainUrl$href"
         }
@@ -84,9 +114,9 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 3. Detay Sayfası
+    // 3. İçerik Detay Sayfası
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url).document
+        val document = app.get(url, headers = headers).document
         val title = document.selectFirst("h1, header h1, div.title h1")?.text()?.trim() ?: "Bilinmeyen Başlık"
         
         val imgEl = document.selectFirst("div.poster img, .poster-container img, img.cover, article img")
@@ -129,25 +159,25 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantılarını Çekme (AJAX & Embed Uyarlaması)
+    // 4. Video Kaynaklarını ve İframe'leri Çözümleme
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
+        val document = app.get(data, headers = headers).document
         var found = false
         val extractedUrls = mutableListOf<String>()
 
-        // A. Doğrudan HTML içindeki tüm iframe'leri tara
-        document.select("iframe").forEach { iframe ->
+        // A. Sayfadaki Tüm İframe ve Player Linklerini Yakala
+        document.select("iframe, div.video-container iframe, div.player-container iframe").forEach { iframe ->
             val src = iframe.attr("src").trim().ifEmpty { iframe.attr("data-src").trim() }
             if (src.isNotEmpty()) extractedUrls.add(src)
         }
 
-        // B. Sitedeki Player Tab / Alternatif Kaynak Butonlarını Tara
-        document.select("[data-video], [data-url], [data-post], [data-id], .player-tab, nav.player-tabs a").forEach { el ->
+        // B. Player Altındaki Alternatif Sunucu Butonları (Rapidrame, Vidmoly vb.)
+        document.select("[data-video], [data-url], [data-post], [data-id], .player-tab, nav.player-tabs a, div.alternative-links a").forEach { el ->
             val videoAttr = el.attr("data-video").trim()
                 .ifEmpty { el.attr("data-url").trim() }
                 .ifEmpty { el.attr("href").trim() }
@@ -157,7 +187,7 @@ class HdFilmCehennemiProvider : MainAPI() {
             }
         }
 
-        // C. Elde edilen tüm bağlantıları çözümleyicilere (Extractor) gönder
+        // C. Yakalanan Bağlantıları İşleme ve Extractor'a Gönderme
         for (rawUrl in extractedUrls.distinct()) {
             var url = rawUrl
             if (url.startsWith("//")) {
@@ -166,25 +196,25 @@ class HdFilmCehennemiProvider : MainAPI() {
                 url = "$mainUrl$url"
             }
 
-            // Cloudstream'in yerleşik extractor'larını çalıştır (Vidmoly, Rapidrame vb.)
+            // 1. Doğrudan Cloudstream Extractor'ına Gönder
             val loaded = loadExtractor(url, data, subtitleCallback, callback)
             if (loaded) {
                 found = true
             } else {
-                // Eğer dönen bağlantı bir embed/player sayfası ise o sayfayı da indirip içindeki iframe'i tara
-                if (url.contains("hdfilmcehennemi") || url.contains("player") || url.contains("embed")) {
-                    runCatching {
-                        val embedDoc = app.get(url, referer = "$mainUrl/").document
-                        embedDoc.select("iframe").forEach { innerIframe ->
-                            var innerSrc = innerIframe.attr("src").trim().ifEmpty { innerIframe.attr("data-src").trim() }
-                            if (innerSrc.startsWith("//")) innerSrc = "https:$innerSrc"
-                            if (innerSrc.isNotEmpty()) {
-                                if (loadExtractor(innerSrc, url, subtitleCallback, callback)) {
-                                    found = true
-                                }
+                // 2. Eğer site içi bir embed/player bağlantısı ise, o iç sayfayı indirip içindeki iframe'i tara
+                try {
+                    val embedDoc = app.get(url, headers = mapOf("Referer" to data, "User-Agent" to headers["User-Agent"]!!)).document
+                    embedDoc.select("iframe").forEach { innerIframe ->
+                        var innerSrc = innerIframe.attr("src").trim().ifEmpty { innerIframe.attr("data-src").trim() }
+                        if (innerSrc.startsWith("//")) innerSrc = "https:$innerSrc"
+                        if (innerSrc.isNotEmpty()) {
+                            if (loadExtractor(innerSrc, url, subtitleCallback, callback)) {
+                                found = true
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
         }

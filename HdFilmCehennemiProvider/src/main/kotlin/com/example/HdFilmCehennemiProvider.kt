@@ -2,7 +2,9 @@ package com.example
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import org.jsoup.select.Elements
 import java.net.URLEncoder
 
 class HdFilmCehennemiProvider : MainAPI() {
@@ -10,6 +12,7 @@ class HdFilmCehennemiProvider : MainAPI() {
     override var mainUrl = "https://www.hdfilmcehennemi.nl"
     override var name = "HDFilmCehennemi"
     override var lang = "tr"
+
     override val hasMainPage = true
 
     override val supportedTypes = setOf(
@@ -22,7 +25,7 @@ class HdFilmCehennemiProvider : MainAPI() {
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/128.0.0.0 Safari/537.36"
 
-    private val requestHeaders = mapOf(
+    private val headers = mapOf(
         "User-Agent" to userAgent,
         "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
@@ -33,59 +36,64 @@ class HdFilmCehennemiProvider : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val safePage = page.coerceAtLeast(1)
+        val currentPage: Int = page.coerceAtLeast(1)
 
-        val url = if (safePage == 1) {
+        val pageUrl: String = if (currentPage == 1) {
             "$mainUrl/"
         } else {
-            "$mainUrl/page/$safePage/"
+            "$mainUrl/page/$currentPage/"
         }
 
         return try {
-            val document = app.get(
-                url = url,
-                headers = requestHeaders
+            val document: Document = app.get(
+                pageUrl,
+                headers = headers
             ).document
 
-            val results = parseSearchResults(document)
+            val results: List<SearchResponse> =
+                parseResults(document)
 
             newHomePageResponse(
-                list = listOf(
+                listOf(
                     HomePageList(
-                        name = "Son Eklenenler",
-                        list = results,
+                        "Son Eklenenler",
+                        results,
                         isHorizontalImages = true
                     )
                 ),
                 hasNext = results.isNotEmpty()
             )
         } catch (error: Exception) {
-            logError("Ana sayfa yüklenemedi: $url", error)
+            logError("Ana sayfa yüklenemedi: $pageUrl", error)
+
             newHomePageResponse(
-                list = emptyList(),
+                emptyList(),
                 hasNext = false
             )
         }
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        val encodedQuery = URLEncoder
-            .encode(query.trim(), Charsets.UTF_8.name())
+    override suspend fun search(
+        query: String
+    ): List<SearchResponse> {
+        val encodedQuery: String = URLEncoder
+            .encode(query.trim(), "UTF-8")
             .replace("+", "%20")
 
-        val searchUrls = listOf(
+        val searchUrls: List<String> = listOf(
             "$mainUrl/search/$encodedQuery/",
             "$mainUrl/?s=$encodedQuery"
         )
 
-        for (searchUrl in searchUrls) {
+        for (searchUrl: String in searchUrls) {
             try {
-                val response = app.get(
-                    url = searchUrl,
-                    headers = requestHeaders
-                )
+                val document: Document = app.get(
+                    searchUrl,
+                    headers = headers
+                ).document
 
-                val results = parseSearchResults(response.document)
+                val results: List<SearchResponse> =
+                    parseResults(document)
 
                 if (results.isNotEmpty()) {
                     return results
@@ -98,188 +106,244 @@ class HdFilmCehennemiProvider : MainAPI() {
         return emptyList()
     }
 
-    private fun parseSearchResults(document: org.jsoup.nodes.Document): List<SearchResponse> {
-        val selector = """
-            article,
-            .movie-box,
-            .movie-item,
-            .film-box,
-            .film-item,
-            .card,
-            .poster
-        """.trimIndent().replace("\n", "")
+    private fun parseResults(
+        document: Document
+    ): List<SearchResponse> {
+        val selector: String =
+            "article," +
+                ".movie-box," +
+                ".movie-item," +
+                ".film-box," +
+                ".film-item," +
+                ".card," +
+                ".poster"
 
-        return document
-            .select(selector)
-            .mapNotNull { it.toSearchResult() }
-            .distinctBy { normalizeUrl(it.url) }
+        val elements: Elements = document.select(selector)
+
+        val results: MutableList<SearchResponse> =
+            mutableListOf()
+
+        for (element: Element in elements) {
+            val result: SearchResponse? =
+                element.toSearchResult()
+
+            if (result != null) {
+                results.add(result)
+            }
+        }
+
+        return results.distinctBy { result: SearchResponse ->
+            result.url
+        }
     }
-        private fun Element.toSearchResult(): SearchResponse? {
-        val linkElement = when {
-            tagName() == "a" -> this
-            else -> selectFirst("a[href]")
-        } ?: return null
 
-        val href = normalizeUrl(linkElement.attr("href"))
+    private fun Element.toSearchResult(): SearchResponse? {
+        val linkElement: Element? =
+            if (tagName() == "a") {
+                this
+            } else {
+                findElement(this, "a[href]")
+            }
 
-        if (!isContentUrl(href)) {
+        if (linkElement == null) {
             return null
         }
 
-        val image = selectFirst("img")
+        val contentUrl: String =
+            normalizeUrl(linkElement.attr("href"))
 
-        val title = firstNonBlank(
-            selectFirst("h1")?.text(),
-            selectFirst("h2")?.text(),
-            selectFirst("h3")?.text(),
-            selectFirst(".title")?.text(),
-            selectFirst(".film-title")?.text(),
-            selectFirst(".movie-title")?.text(),
+        if (!isValidContentUrl(contentUrl)) {
+            return null
+        }
+
+        val imageElement: Element? =
+            findElement(this, "img")
+
+        val title: String? = firstNonBlank(
+            findElement(this, "h1")?.text(),
+            findElement(this, "h2")?.text(),
+            findElement(this, "h3")?.text(),
+            findElement(this, ".title")?.text(),
+            findElement(this, ".film-title")?.text(),
+            findElement(this, ".movie-title")?.text(),
             linkElement.attr("title"),
-            image?.attr("alt")
+            imageElement?.attr("alt")
         )?.trim()
 
         if (title.isNullOrBlank()) {
             return null
         }
 
-        val poster = image?.let {
-            firstNonBlank(
-                it.attr("data-src"),
-                it.attr("data-lazy-src"),
-                it.attr("data-original"),
-                it.attr("src")
-            )?.let(::normalizeUrl)
-        }
+        val posterUrl: String? =
+            imageElement?.let { image: Element ->
+                val rawPoster: String? = firstNonBlank(
+                    image.attr("data-src"),
+                    image.attr("data-lazy-src"),
+                    image.attr("data-original"),
+                    image.attr("src")
+                )
 
-        val type = if (isSeriesUrl(href)) {
-            TvType.TvSeries
-        } else {
-            TvType.Movie
-        }
+                if (rawPoster.isNullOrBlank()) {
+                    null
+                } else {
+                    normalizeUrl(rawPoster)
+                }
+            }
+
+        val type: TvType =
+            if (isSeriesUrl(contentUrl)) {
+                TvType.TvSeries
+            } else {
+                TvType.Movie
+            }
 
         return newMovieSearchResponse(
-            name = title,
-            url = href,
-            type = type
+            title,
+            contentUrl,
+            type
         ) {
-            posterUrl = poster
+            posterUrl = posterUrl
         }
     }
-
-    override suspend fun load(url: String): LoadResponse {
-        val normalizedUrl = normalizeUrl(url)
+    override suspend fun load(
+        url: String
+    ): LoadResponse {
+        val pageUrl: String = normalizeUrl(url)
 
         return try {
-            val document = app.get(
-                url = normalizedUrl,
-                headers = requestHeaders
+            val document: Document = app.get(
+                pageUrl,
+                headers = headers
             ).document
 
-            val title = firstNonBlank(
-                document.selectFirst("h1")?.text(),
-                document.selectFirst("h2")?.text(),
-                document.selectFirst("meta[property=og:title]")?.attr("content"),
+            val title: String = firstNonBlank(
+                findElement(document, "h1")?.text(),
+                findElement(document, "h2")?.text(),
+                findElement(document, "meta[property=og:title]")
+                    ?.attr("content"),
                 document.title()
             )?.trim() ?: "Bilinmeyen içerik"
 
-            val posterElement: Element? = document.selectFirst(
-               "meta[property=og:image], " +
-               "div.poster img, " +
-               ".poster img, " +
-               ".movie-poster img, " +
-               "article img"
-         )
+            val posterElement: Element? = findElement(
+                document,
+                "meta[property=og:image]," +
+                    "div.poster img," +
+                    ".poster img," +
+                    ".movie-poster img," +
+                    "article img"
+            )
 
-            val poster: String? = posterElement?
-                    firstNonBlank(
-                        it.attr("content"),
-                        it.attr("data-src"),
-                        it.attr("data-lazy-src"),
-                        it.attr("src")
-                    )?.let(::normalizeUrl)
+            val poster: String? =
+                if (posterElement == null) {
+                    null
+                } else {
+                    val rawPoster: String? = firstNonBlank(
+                        posterElement.attr("content"),
+                        posterElement.attr("data-src"),
+                        posterElement.attr("data-lazy-src"),
+                        posterElement.attr("src")
+                    )
+
+                    if (rawPoster.isNullOrBlank()) {
+                        null
+                    } else {
+                        normalizeUrl(rawPoster)
+                    }
                 }
 
-            val plot = firstNonBlank(
-                document.selectFirst("meta[name=description]")?.attr("content"),
-                document.selectFirst("meta[property=og:description]")?.attr("content"),
-                document.selectFirst(".description")?.text(),
-                document.selectFirst(".overview")?.text(),
-                document.selectFirst(".story")?.text(),
-                document.selectFirst(".post-content")?.text()
+            val plot: String? = firstNonBlank(
+                findElement(document, "meta[name=description]")
+                    ?.attr("content"),
+                findElement(document, "meta[property=og:description]")
+                    ?.attr("content"),
+                findElement(document, ".description")?.text(),
+                findElement(document, ".overview")?.text(),
+                findElement(document, ".story")?.text(),
+                findElement(document, ".post-content")?.text()
             )?.trim()
 
-            if (isSeriesUrl(normalizedUrl)) {
-                val episodes = parseEpisodes(document)
+            if (isSeriesUrl(pageUrl)) {
+                val episodes: List<Episode> =
+                    parseEpisodes(document)
 
                 newTvSeriesLoadResponse(
-                    name = title,
-                    url = normalizedUrl,
-                    type = TvType.TvSeries,
-                    episodes = episodes
+                    title,
+                    pageUrl,
+                    TvType.TvSeries,
+                    episodes
                 ) {
                     posterUrl = poster
                     this.plot = plot
                 }
             } else {
                 newMovieLoadResponse(
-                    name = title,
-                    url = normalizedUrl,
-                    type = TvType.Movie,
-                    dataUrl = normalizedUrl
+                    title,
+                    pageUrl,
+                    TvType.Movie,
+                    pageUrl
                 ) {
                     posterUrl = poster
                     this.plot = plot
                 }
             }
         } catch (error: Exception) {
-            logError("Detay sayfası yüklenemedi: $normalizedUrl", error)
+            logError("Detay sayfası yüklenemedi: $pageUrl", error)
 
             newMovieLoadResponse(
-                name = "İçerik yüklenemedi",
-                url = normalizedUrl,
-                type = TvType.Movie,
-                dataUrl = normalizedUrl
+                "İçerik yüklenemedi",
+                pageUrl,
+                TvType.Movie,
+                pageUrl
             )
         }
     }
+
     private fun parseEpisodes(
-        document: org.jsoup.nodes.Document
+        document: Document
     ): List<Episode> {
-        val selector = """
-            .episode-list a[href],
-            .episodes a[href],
-            ul.episodes a[href],
-            .season-list a[href],
-            .seasons-list a[href],
-            a[href*="/bolum"],
-            a[href*="-bolum-"]
-        """.trimIndent().replace("\n", "")
+        val selector: String =
+            ".episode-list a[href]," +
+                ".episodes a[href]," +
+                "ul.episodes a[href]," +
+                ".season-list a[href]," +
+                ".seasons-list a[href]," +
+                "a[href*='/bolum']," +
+                "a[href*='-bolum-']"
 
-        return document
-            .select(selector)
-            .mapNotNull { element ->
-                val href = normalizeUrl(element.attr("href"))
+        val elements: Elements =
+            document.select(selector)
 
-                if (!isContentUrl(href)) {
-                    return@mapNotNull null
-                }
+        val episodes: MutableList<Episode> =
+            mutableListOf()
 
-                val episodeName = firstNonBlank(
-                    element.text(),
-                    element.attr("title"),
-                    element.attr("aria-label")
-                )?.trim()
+        for (element: Element in elements) {
+            val episodeUrl: String =
+                normalizeUrl(element.attr("href"))
 
-                if (episodeName.isNullOrBlank()) {
-                    return@mapNotNull null
-                }
+            if (!isValidContentUrl(episodeUrl)) {
+                continue
+            }
 
-                newEpisode(href) {
+            val episodeName: String? = firstNonBlank(
+                element.text(),
+                element.attr("title"),
+                element.attr("aria-label")
+            )?.trim()
+
+            if (episodeName.isNullOrBlank()) {
+                continue
+            }
+
+            episodes.add(
+                newEpisode(episodeUrl) {
                     name = episodeName
                 }
-            }
-            .distinctBy { normalizeUrl(it.data) }
+            )
+        }
+
+        return episodes.distinctBy { episode: Episode ->
+            episode.data
+        }
     }
 
     override suspend fun loadLinks(
@@ -288,101 +352,106 @@ class HdFilmCehennemiProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val pageUrl = normalizeUrl(data)
-        var found = false
+        val pageUrl: String =
+            normalizeUrl(data)
+
+        val candidateUrls: MutableSet<String> =
+            linkedSetOf()
+
+        var found: Boolean = false
 
         try {
-            val document = app.get(
-                url = pageUrl,
-                headers = requestHeaders
+            val document: Document = app.get(
+                pageUrl,
+                headers = headers
             ).document
+            val iframeElements: Elements = document.select(
+                "div.video-container iframe," +
+                    ".hdmv-play-container iframe," +
+                    ".play-that-video iframe," +
+                    "iframe[src]," +
+                    "iframe[data-src]"
+            )
 
-            val candidateUrls = linkedSetOf<String>()
-
-            /*
-             * Ana sayfadaki gerçek yapı:
-             *
-             * <div class="video-container">
-             *     <iframe class="close" src="..." data-src="...">
-             * </iframe>
-             * </div>
-             */
-
-            document
-                .select(
-                    "div.video-container iframe, " +
-                        ".hdmv-play-container iframe, " +
-                        ".play-that-video iframe, " +
-                        "iframe[src], iframe[data-src]"
+            for (iframe: Element in iframeElements) {
+                addCandidate(
+                    candidateUrls,
+                    iframe.attr("src")
                 )
-                .forEach { iframe ->
-                    addCandidate(
-                        candidateUrls,
-                        iframe.attr("src")
-                    )
 
-                    addCandidate(
-                        candidateUrls,
-                        iframe.attr("data-src")
-                    )
-                }
-
-            document
-                .select(
-                    "video source[src], " +
-                        "video[src], " +
-                        "source[src]"
+                addCandidate(
+                    candidateUrls,
+                    iframe.attr("data-src")
                 )
-                .forEach { source ->
-                    addCandidate(
-                        candidateUrls,
-                        source.attr("src")
-                    )
-                }
+            }
 
-            document
-                .select(
-                    "[data-video], " +
-                        "[data-player], " +
-                        "[data-stream], " +
-                        "[data-file]"
+            val sourceElements: Elements = document.select(
+                "video source[src]," +
+                    "video[src]," +
+                    "source[src]"
+            )
+
+            for (source: Element in sourceElements) {
+                addCandidate(
+                    candidateUrls,
+                    source.attr("src")
                 )
-                .forEach { element ->
-                    addCandidate(candidateUrls, element.attr("data-video"))
-                    addCandidate(candidateUrls, element.attr("data-player"))
-                    addCandidate(candidateUrls, element.attr("data-stream"))
-                    addCandidate(candidateUrls, element.attr("data-file"))
-                }
+            }
 
-            for (candidate in candidateUrls) {
-                if (candidate.isBlank()) {
-                    continue
-                }
+            val dataElements: Elements = document.select(
+                "[data-video]," +
+                    "[data-player]," +
+                    "[data-stream]," +
+                    "[data-file]"
+            )
 
+            for (element: Element in dataElements) {
+                addCandidate(
+                    candidateUrls,
+                    element.attr("data-video")
+                )
+
+                addCandidate(
+                    candidateUrls,
+                    element.attr("data-player")
+                )
+
+                addCandidate(
+                    candidateUrls,
+                    element.attr("data-stream")
+                )
+
+                addCandidate(
+                    candidateUrls,
+                    element.attr("data-file")
+                )
+            }
+
+            for (candidate: String in candidateUrls) {
                 try {
-                    /*
-                     * Embed URL'si başka domaine gittiği için referer olarak
-                     * ana film sayfası gönderiliyor.
-                     */
-                    val extractorFound = loadExtractor(
-                        url = candidate,
-                        referer = pageUrl,
-                        subtitleCallback = subtitleCallback,
-                        callback = callback
-                    )
+                    val extractorFound: Boolean =
+                        loadExtractor(
+                            candidate,
+                            pageUrl,
+                            subtitleCallback,
+                            callback
+                        )
 
                     if (extractorFound) {
                         found = true
                     }
-                } catch (extractorError: Exception) {
+                } catch (error: Exception) {
                     logError(
                         "Extractor başarısız: $candidate",
-                        extractorError
+                        error
                     )
                 }
             }
         } catch (error: Exception) {
-            logError("Video kaynakları yüklenemedi: $pageUrl", error)
+            logError(
+                "Video kaynakları yüklenemedi: $pageUrl",
+                error
+            )
         }
 
         return found
@@ -396,7 +465,8 @@ class HdFilmCehennemiProvider : MainAPI() {
             return
         }
 
-        val url = normalizeUrl(rawUrl)
+        val url: String =
+            normalizeUrl(rawUrl)
 
         if (
             url.startsWith("http://") ||
@@ -406,27 +476,63 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    private fun normalizeUrl(rawUrl: String?): String {
+    private fun findElement(
+        document: Document,
+        selector: String
+    ): Element? {
+        val elements: Elements =
+            document.select(selector)
+
+        return elements.firstOrNull()
+    }
+
+    private fun findElement(
+        element: Element,
+        selector: String
+    ): Element? {
+        val elements: Elements =
+            element.select(selector)
+
+        return elements.firstOrNull()
+    }
+
+    private fun normalizeUrl(
+        rawUrl: String?
+    ): String {
         if (rawUrl.isNullOrBlank()) {
             return ""
         }
 
-        val value = rawUrl.trim()
+        val value: String =
+            rawUrl.trim()
 
         return when {
-            value.startsWith("//") -> "https:$value"
-            value.startsWith("http://") || value.startsWith("https://") -> value
-            value.startsWith("/") -> "$mainUrl$value"
-            else -> "$mainUrl/$value"
+            value.startsWith("//") ->
+                "https:$value"
+
+            value.startsWith("http://") ||
+                value.startsWith("https://") ->
+                value
+
+            value.startsWith("/") ->
+                "$mainUrl$value"
+
+            else ->
+                "$mainUrl/$value"
         }
     }
-    private fun isSeriesUrl(url: String): Boolean {
+
+    private fun isSeriesUrl(
+        url: String
+    ): Boolean {
         return url.contains("/dizi/") ||
             url.contains("/series/") ||
             url.contains("/tv/")
     }
 
-    private fun isContentUrl(url: String): Boolean {
+    private fun isValidContentUrl(
+        url: String
+    ): Boolean {
         if (url.isBlank()) {
             return false
         }
@@ -446,13 +552,18 @@ class HdFilmCehennemiProvider : MainAPI() {
         return url.startsWith("$mainUrl/")
     }
 
-    private fun firstNonBlank(vararg values: String?): String? {
+    private fun firstNonBlank(
+        vararg values: String?
+    ): String? {
         return values.firstOrNull {
             !it.isNullOrBlank()
         }
     }
 
-    private fun logError(message: String, error: Throwable) {
+    private fun logError(
+        message: String,
+        error: Throwable
+    ) {
         println(
             "HDFilmCehennemi: $message | " +
                 "${error::class.simpleName}: ${error.message}"

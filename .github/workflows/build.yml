@@ -1,5 +1,8 @@
 name: Eklentiyi Derle ve Yayınla
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main]
@@ -47,4 +50,4 @@ jobs:
 
           git add -A
           git commit -m "Otomatik derleme: ${{ github.sha }}"
-          git push origin builds-temp:builds --force
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git builds-temp:builds --force

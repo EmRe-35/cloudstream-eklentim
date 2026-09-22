@@ -95,40 +95,49 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // TEŞHİS VE LOGLAMA FONKSİYONU
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        println("HDFilmCehennemi LOG: Taranan Film Sayfası -> $data")
         var found = false
 
         try {
-            val response = app.get(data, headers = headers)
-            println("HDFilmCehennemi LOG: HTTP Yanıt Kodu -> ${response.code}")
+            val document = app.get(data, headers = headers).document
 
-            val document = response.document
-            val iframes = document.select("iframe, [data-src], [data-video]")
-            println("HDFilmCehennemi LOG: Bulunan İframe/Element Sayısı -> ${iframes.size}")
+            // 1. Doğrudan sayfadaki tüm iframe ve player veri özniteliklerini topla
+            val sources = mutableListOf<String>()
 
-            for (el in iframes) {
-                val src = el.attr("src").ifEmpty { el.attr("data-src") }.ifEmpty { el.attr("data-video") }
-                println("HDFilmCehennemi LOG: Yakalanan Adres -> $src")
+            document.select("iframe, [data-src], [data-video], [data-player], nav.card-nav a, div.video-options a").forEach { el ->
+                val src = el.attr("src")
+                    .ifEmpty { el.attr("data-src") }
+                    .ifEmpty { el.attr("data-video") }
+                    .ifEmpty { el.attr("data-player") }
+                    .ifEmpty { el.attr("href") }
 
-                if (src.isNotEmpty()) {
-                    var fullUrl = src
-                    if (fullUrl.startsWith("//")) fullUrl = "https:$fullUrl"
-                    if (!fullUrl.startsWith("http")) fullUrl = "$mainUrl$fullUrl"
+                if (src.isNotBlank() && !src.startsWith("#") && !src.contains("javascript:")) {
+                    sources.add(src)
+                }
+            }
 
-                    val isExtracted = loadExtractor(fullUrl, data, subtitleCallback, callback)
-                    println("HDFilmCehennemi LOG: Extractor Sonucu ($fullUrl) -> $isExtracted")
-                    if (isExtracted) found = true
+            // 2. Bulunan URL adreslerini düzelt ve Extractor mekanizmasına gönder
+            for (rawUrl in sources.distinct()) {
+                var fullUrl = rawUrl.trim()
+                if (fullUrl.startsWith("//")) fullUrl = "https:$fullUrl"
+                if (!fullUrl.startsWith("http")) fullUrl = "$mainUrl$fullUrl"
+
+                // Reklam veya alakasız linkleri filtrele
+                if (fullUrl.contains("/kategori/") || fullUrl.contains("/imdb/") || fullUrl.contains("facebook.com")) continue
+
+                // Cloudstream'in dahili Extractor'ları ile video bağlantısını yakala
+                val extracted = loadExtractor(fullUrl, data, subtitleCallback, callback)
+                if (extracted) {
+                    found = true
                 }
             }
         } catch (e: Exception) {
-            println("HDFilmCehennemi LOG HATA: ${e.message}")
+            println("HDFilmCehennemi HATA: ${e.localizedMessage}")
         }
 
         return found

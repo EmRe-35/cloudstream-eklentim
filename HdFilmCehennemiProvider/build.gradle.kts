@@ -13,5 +13,4 @@ cloudstream {
 
 dependencies {
     implementation("org.jspecify:jspecify:1.0.0")
-
 }

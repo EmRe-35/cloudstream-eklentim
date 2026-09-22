@@ -2,6 +2,7 @@ package com.example
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.network.WebViewResolver
 import org.jsoup.nodes.Element
 
 class HdFilmCehennemiProvider : MainAPI() {
@@ -18,8 +19,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
     private val headers = mapOf(
         "User-Agent" to userAgent,
-        "Referer" to "$mainUrl/",
-        "X-Requested-With" to "XMLHttpRequest"
+        "Referer" to "$mainUrl/"
     )
 
     // 1. Ana Sayfa
@@ -98,58 +98,34 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Yeni Yöntem: Bütün Alternatif Player Endpoint'lerini Çözme
+    // 4. Web Taraması (WebViewResolver) ile Video Linklerini Yakalama
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val response = app.get(data, headers = headers)
-        val document = response.document
         var found = false
 
-        val urlsToTest = mutableListOf<String>()
+        // Arka planda WebView çalıştırarak dinamik ağ isteklerini (m3u8 / embed / iframe) dinle
+        val request = app.get(
+            data,
+            headers = headers,
+            interceptor = WebViewResolver(Regex("""(m3u8|embed|player|video|\.mp4)"""))
+        )
 
-        // Yöntem A: Sitedeki tab/player butonlarındaki 'data-id', 'data-embed' veya 'data-url' özniteliklerini topla
-        document.select("[data-id], [data-embed], [data-url], [data-video], button, a.nav-link").forEach { el ->
-            val dataUrl = el.attr("data-url").ifEmpty { el.attr("data-embed") }.ifEmpty { el.attr("data-video") }
-            if (dataUrl.isNotEmpty()) {
-                urlsToTest.add(dataUrl)
-            }
-        }
+        val document = request.document
 
-        // Yöntem B: Tüm iframe'lerin varsayılan ve lazy-load linklerini al
-        document.select("iframe").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
-            if (src.isNotEmpty()) urlsToTest.add(src)
-        }
+        // Sayfa yüklendikten sonra JS tarafından oluşturulmuş güncel iframe'leri topla
+        val iframes = document.select("iframe[src], iframe[data-src]")
+        for (iframe in iframes) {
+            var src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
+            if (src.startsWith("//")) src = "https:$src"
 
-        // Bulunan URL'leri işle
-        for (rawUrl in urlsToTest.distinct()) {
-            var targetUrl = rawUrl.trim()
-            if (targetUrl.startsWith("//")) targetUrl = "https:$targetUrl"
-            if (!targetUrl.startsWith("http")) targetUrl = "$mainUrl$targetUrl"
-
-            // Filtreleme (gereksiz sosyal medya/reklam linklerini atla)
-            if (targetUrl.contains("facebook") || targetUrl.contains("google") || targetUrl.contains("disqus")) continue
-
-            // Eğer yönlendirilen sayfa doğrudan bir video oynatıcı ise Extractor'a gönder
-            if (loadExtractor(targetUrl, data, subtitleCallback, callback)) {
-                found = true
-            } else {
-                // Eğer doğrudan çözülemediyse, bu embed sayfasının içine girip içindeki asıl iframe'i ara
-                try {
-                    val subDoc = app.get(targetUrl, headers = mapOf("Referer" to data, "User-Agent" to userAgent)).document
-                    val innerIframe = subDoc.selectFirst("iframe")?.attr("src")
-                    if (!innerIframe.isNullOrEmpty()) {
-                        var finalUrl = innerIframe
-                        if (finalUrl.startsWith("//")) finalUrl = "https:$finalUrl"
-                        if (loadExtractor(finalUrl, targetUrl, subtitleCallback, callback)) {
-                            found = true
-                        }
-                    }
-                } catch (_: Exception) { }
+            if (src.isNotEmpty() && !src.contains("facebook") && !src.contains("google")) {
+                if (loadExtractor(src, data, subtitleCallback, callback)) {
+                    found = true
+                }
             }
         }
 

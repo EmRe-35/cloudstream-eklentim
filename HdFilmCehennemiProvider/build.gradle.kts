@@ -1,10 +1,10 @@
-version = 2
+version = 1
 
 cloudstream {
     language = "tr"
-    description = "Archive.org üzerinden telifsiz/açık arşiv içeriği"
-    authors = listOf("SeninAdin")
+    description = "HDFilmCehennemi üzerinden film ve dizi izleme eklentisi"
+    authors = listOf("EmRe-35")
     status = 1
-    tvTypes = listOf("Movie")
-    iconUrl = "https://archive.org/favicon.ico"
+    tvTypes = listOf("Movie", "TvSeries")
+    iconUrl = "https://www.hdfilmcehennemi.nl/favicon.ico"
 }

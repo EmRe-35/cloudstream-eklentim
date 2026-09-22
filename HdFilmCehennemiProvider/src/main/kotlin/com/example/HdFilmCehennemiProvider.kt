@@ -66,18 +66,17 @@ class HdFilmCehennemiProvider : MainAPI() {
         return if (isTvSeries) {
             val episodes = mutableListOf<Episode>()
             
-            // Dizi Bölümlerini Ayıklama
+            // Dizi Bölümlerini newEpisode kullanarak ekliyoruz
             document.select("div.episode-list a, ul.episodes a, div.seasons-list a").forEach { ep ->
                 var epHref = ep.attr("href")
                 if (!epHref.startsWith("http")) epHref = "$mainUrl$epHref"
                 
                 val epName = ep.text().ifBlank { "Bölüm" }
-                episodes.add(
-                    Episode(
-                        data = epHref,
-                        name = epName
-                    )
-                )
+                
+                val newEp = newEpisode(epHref) {
+                    this.name = epName
+                }
+                episodes.add(newEp)
             }
 
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
@@ -102,7 +101,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         val document = app.get(data).document
         var found = false
 
-        // Sitedeki iframe (video player) adreslerini yakalama
         val iframes = document.select("iframe, div.video-container iframe, div.player-container iframe")
 
         for (iframe in iframes) {
@@ -114,12 +112,10 @@ class HdFilmCehennemiProvider : MainAPI() {
             }
 
             if (src.isNotBlank()) {
-                // Vidmoly, Rapidrame, Doodstream vb. Cloudstream dahili çözücüleri ile bağlantıları çözüyoruz
                 val loaded = loadExtractor(src, data, subtitleCallback, callback)
                 if (loaded) {
                     found = true
                 } else {
-                    // Eğer doğrudan mp4 veya m3u8 adresi yakalanırsa:
                     if (src.contains(".mp4") || src.contains(".m3u8")) {
                         callback(
                             ExtractorLink(

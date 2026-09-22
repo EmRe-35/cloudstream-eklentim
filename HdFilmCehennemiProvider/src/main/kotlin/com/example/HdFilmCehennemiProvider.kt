@@ -2,7 +2,6 @@ package com.example
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.network.WebViewResolver
 import org.jsoup.nodes.Element
 
 class HdFilmCehennemiProvider : MainAPI() {
@@ -15,11 +14,12 @@ class HdFilmCehennemiProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    private val userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
 
     private val headers = mapOf(
         "User-Agent" to userAgent,
-        "Referer" to "$mainUrl/"
+        "Referer" to "$mainUrl/",
+        "X-Requested-With" to "XMLHttpRequest"
     )
 
     // 1. Ana Sayfa
@@ -98,7 +98,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Web Taraması (WebViewResolver) ile Video Linklerini Yakalama
+    // 4. Doğrudan Player Domain Taraması ve Redirect Takibi
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -106,24 +106,47 @@ class HdFilmCehennemiProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         var found = false
+        val pageRes = app.get(data, headers = headers)
+        val doc = pageRes.document
 
-        // Arka planda WebView çalıştırarak dinamik ağ isteklerini (m3u8 / embed / iframe) dinle
-        val request = app.get(
-            data,
-            headers = headers,
-            interceptor = WebViewResolver(Regex("""(m3u8|embed|player|video|\.mp4)"""))
-        )
+        val linksToExtract = mutableSetOf<String>()
 
-        val document = request.document
+        // Adım 1: Sitedeki tüm video/embed içeren öznitelikleri topla
+        doc.select("[data-src], [data-video], [data-url], iframe, source").forEach { el ->
+            val candidate = el.attr("data-src")
+                .ifEmpty { el.attr("data-video") }
+                .ifEmpty { el.attr("data-url") }
+                .ifEmpty { el.attr("src") }
+            if (candidate.isNotEmpty()) linksToExtract.add(candidate)
+        }
 
-        // Sayfa yüklendikten sonra JS tarafından oluşturulmuş güncel iframe'leri topla
-        val iframes = document.select("iframe[src], iframe[data-src]")
-        for (iframe in iframes) {
-            var src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
-            if (src.startsWith("//")) src = "https:$src"
+        // Adım 2: Alternatif kaynak butonlarını/tab'larını gez
+        doc.select("nav.nav-tabs a, div.alternative-links a, button[data-video]").forEach { btn ->
+            val url = btn.attr("data-video").ifEmpty { btn.attr("href") }
+            if (url.isNotEmpty() && !url.startsWith("#")) linksToExtract.add(url)
+        }
 
-            if (src.isNotEmpty() && !src.contains("facebook") && !src.contains("google")) {
-                if (loadExtractor(src, data, subtitleCallback, callback)) {
+        // Adım 3: Linkleri dönüştür ve Extractor'a gönder
+        for (rawUrl in linksToExtract) {
+            var cleanUrl = rawUrl.trim()
+            if (cleanUrl.startsWith("//")) cleanUrl = "https:$cleanUrl"
+            if (!cleanUrl.startsWith("http")) cleanUrl = "$mainUrl$cleanUrl"
+
+            if (cleanUrl.contains("facebook") || cleanUrl.contains("google") || cleanUrl.contains("twitter")) continue
+
+            // Yönlendirme (Redirect) takibi yaparak son embed adresine ulaş
+            try {
+                val headReq = app.get(cleanUrl, headers = headers, allowRedirects = true)
+                val finalUrl = headReq.url
+
+                // Hem ilk URL'i hem de yönlendirilen son URL'i dene
+                if (loadExtractor(finalUrl, data, subtitleCallback, callback)) {
+                    found = true
+                } else if (loadExtractor(cleanUrl, data, subtitleCallback, callback)) {
+                    found = true
+                }
+            } catch (_: Exception) {
+                if (loadExtractor(cleanUrl, data, subtitleCallback, callback)) {
                     found = true
                 }
             }

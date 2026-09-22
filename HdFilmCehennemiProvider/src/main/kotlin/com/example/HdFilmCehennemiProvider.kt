@@ -19,7 +19,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
         val document = app.get(url).document
 
-        // Sitedeki film/dizi kartlarını yakalayan esnek seçiciler
         val items = document.select("a.poster, div.poster, article.poster, div.card, div.movie-box, article").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
@@ -51,15 +50,29 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
 
         // Başlık bulma
-        val title = this.selectFirst("h2, h3, .title, a.title, strong, img")?.let {
-            if (it.tagName() == "img") it.attr("alt") else it.text()
-        }?.ifBlank { null } ?: this.attr("title").ifBlank { null } ?: return null
+        val titleEl = this.selectFirst("h2, h3, .title, a.title, strong, img")
+        val rawTitle = if (titleEl != null && titleEl.tagName() == "img") {
+            titleEl.attr("alt")
+        } else {
+            titleEl?.text() ?: this.attr("title")
+        }
+        val title = rawTitle.trim()
+        if (title.isEmpty()) return null
 
         // Afiş bulma
-        var posterUrl = this.selectFirst("img")?.let { img ->
-            img.attr("data-src").ifBlank { null }
-                ?: img.attr("data-lazy-src").ifBlank { null }
-                ?: img.attr("src").ifBlank { null }
+        val imgEl = this.selectFirst("img")
+        var posterUrl: String? = null
+        if (imgEl != null) {
+            val dataSrc = imgEl.attr("data-src").trim()
+            val dataLazySrc = imgEl.attr("data-lazy-src").trim()
+            val src = imgEl.attr("src").trim()
+            
+            posterUrl = when {
+                dataSrc.isNotEmpty() -> dataSrc
+                dataLazySrc.isNotEmpty() -> dataLazySrc
+                src.isNotEmpty() -> src
+                else -> null
+            }
         }
 
         if (posterUrl != null && !posterUrl.startsWith("http")) {
@@ -77,22 +90,28 @@ class HdFilmCehennemiProvider : MainAPI() {
     // 3. Detay Sayfası
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-        val title = document.selectFirst("h1, header h1, div.title h1")?.text() ?: "Bilinmeyen Başlık"
-        val poster = document.selectFirst("div.poster img, .poster-container img, img.cover, article img")?.let { img ->
-            img.attr("data-src").ifBlank { null } ?: img.attr("src")
+        val title = document.selectFirst("h1, header h1, div.title h1")?.text()?.trim() ?: "Bilinmeyen Başlık"
+        
+        val imgEl = document.selectFirst("div.poster img, .poster-container img, img.cover, article img")
+        var poster: String? = null
+        if (imgEl != null) {
+            val dataSrc = imgEl.attr("data-src").trim()
+            val src = imgEl.attr("src").trim()
+            poster = if (dataSrc.isNotEmpty()) dataSrc else src
         }
-        val plot = document.selectFirst("div.post-content, div.description, p.story, div.overview, p")?.text()
 
+        val plot = document.selectFirst("div.post-content, div.description, p.story, div.overview, p")?.text()?.trim()
         val isTvSeries = url.contains("/dizi/")
 
         return if (isTvSeries) {
             val episodes = mutableListOf<Episode>()
             
             document.select("div.episode-list a, ul.episodes a, div.seasons-list a, a.episode").forEach { ep ->
-                var epHref = ep.attr("href")
-                if (epHref.isNotBlank()) {
+                var epHref = ep.attr("href").trim()
+                if (epHref.isNotEmpty()) {
                     if (!epHref.startsWith("http")) epHref = "$mainUrl$epHref"
-                    val epName = ep.text().ifBlank { "Bölüm" }
+                    val rawEpName = ep.text().trim()
+                    val epName = if (rawEpName.isNotEmpty()) rawEpName else "Bölüm"
                     
                     val newEp = newEpisode(epHref) {
                         this.name = epName
@@ -126,13 +145,15 @@ class HdFilmCehennemiProvider : MainAPI() {
         val iframes = document.select("iframe, div.video-container iframe, div.player-container iframe")
 
         for (iframe in iframes) {
-            var src = iframe.attr("src").ifBlank { iframe.attr("data-src") }
+            val srcAttr = iframe.attr("src").trim()
+            val dataSrcAttr = iframe.attr("data-src").trim()
+            var src = if (srcAttr.isNotEmpty()) srcAttr else dataSrcAttr
 
             if (src.startsWith("//")) {
                 src = "https:$src"
             }
 
-            if (src.isNotBlank()) {
+            if (src.isNotEmpty()) {
                 val loaded = loadExtractor(src, data, subtitleCallback, callback)
                 if (loaded) {
                     found = true

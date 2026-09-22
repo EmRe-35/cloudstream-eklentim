@@ -14,7 +14,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    private val userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
     private val headers = mapOf(
         "User-Agent" to userAgent,
@@ -22,7 +22,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         "X-Requested-With" to "XMLHttpRequest"
     )
 
-    // 1. Ana Sayfa
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
         val document = app.get(url, headers = headers).document
@@ -34,7 +33,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         return newHomePageResponse(listOf(HomePageList("Son Eklenenler", allItems)))
     }
 
-    // 2. Arama
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/search/$query"
         val document = app.get(searchUrl, headers = headers).document
@@ -67,7 +65,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 3. Detay Sayfası
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url, headers = headers).document
         val title = document.selectFirst("h1, header h1")?.text()?.trim() ?: "İçerik"
@@ -98,58 +95,40 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Doğrudan Player Domain Taraması ve Redirect Takibi
+    // TEŞHİS VE LOGLAMA FONKSİYONU
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        println("HDFilmCehennemi LOG: Taranan Film Sayfası -> $data")
         var found = false
-        val pageRes = app.get(data, headers = headers)
-        val doc = pageRes.document
 
-        val linksToExtract = mutableSetOf<String>()
+        try {
+            val response = app.get(data, headers = headers)
+            println("HDFilmCehennemi LOG: HTTP Yanıt Kodu -> ${response.code}")
 
-        // Adım 1: Sitedeki tüm video/embed içeren öznitelikleri topla
-        doc.select("[data-src], [data-video], [data-url], iframe, source").forEach { el ->
-            val candidate = el.attr("data-src")
-                .ifEmpty { el.attr("data-video") }
-                .ifEmpty { el.attr("data-url") }
-                .ifEmpty { el.attr("src") }
-            if (candidate.isNotEmpty()) linksToExtract.add(candidate)
-        }
+            val document = response.document
+            val iframes = document.select("iframe, [data-src], [data-video]")
+            println("HDFilmCehennemi LOG: Bulunan İframe/Element Sayısı -> ${iframes.size}")
 
-        // Adım 2: Alternatif kaynak butonlarını/tab'larını gez
-        doc.select("nav.nav-tabs a, div.alternative-links a, button[data-video]").forEach { btn ->
-            val url = btn.attr("data-video").ifEmpty { btn.attr("href") }
-            if (url.isNotEmpty() && !url.startsWith("#")) linksToExtract.add(url)
-        }
+            for (el in iframes) {
+                val src = el.attr("src").ifEmpty { el.attr("data-src") }.ifEmpty { el.attr("data-video") }
+                println("HDFilmCehennemi LOG: Yakalanan Adres -> $src")
 
-        // Adım 3: Linkleri dönüştür ve Extractor'a gönder
-        for (rawUrl in linksToExtract) {
-            var cleanUrl = rawUrl.trim()
-            if (cleanUrl.startsWith("//")) cleanUrl = "https:$cleanUrl"
-            if (!cleanUrl.startsWith("http")) cleanUrl = "$mainUrl$cleanUrl"
+                if (src.isNotEmpty()) {
+                    var fullUrl = src
+                    if (fullUrl.startsWith("//")) fullUrl = "https:$fullUrl"
+                    if (!fullUrl.startsWith("http")) fullUrl = "$mainUrl$fullUrl"
 
-            if (cleanUrl.contains("facebook") || cleanUrl.contains("google") || cleanUrl.contains("twitter")) continue
-
-            // Yönlendirme (Redirect) takibi yaparak son embed adresine ulaş
-            try {
-                val headReq = app.get(cleanUrl, headers = headers, allowRedirects = true)
-                val finalUrl = headReq.url
-
-                // Hem ilk URL'i hem de yönlendirilen son URL'i dene
-                if (loadExtractor(finalUrl, data, subtitleCallback, callback)) {
-                    found = true
-                } else if (loadExtractor(cleanUrl, data, subtitleCallback, callback)) {
-                    found = true
-                }
-            } catch (_: Exception) {
-                if (loadExtractor(cleanUrl, data, subtitleCallback, callback)) {
-                    found = true
+                    val isExtracted = loadExtractor(fullUrl, data, subtitleCallback, callback)
+                    println("HDFilmCehennemi LOG: Extractor Sonucu ($fullUrl) -> $isExtracted")
+                    if (isExtracted) found = true
                 }
             }
+        } catch (e: Exception) {
+            println("HDFilmCehennemi LOG HATA: ${e.message}")
         }
 
         return found

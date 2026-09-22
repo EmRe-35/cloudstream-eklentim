@@ -1,6 +1,6 @@
 {
-  "name": "Benim Reposum",
-  "description": "Archive.org eklentisi",
+  "name": "HD Film Cehennemi Reposu",
+  "description": "hdfilmcehennemi.nl Cloudstream eklentisi",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/EmRe-35/cloudstream-eklentim/builds/plugins.json"

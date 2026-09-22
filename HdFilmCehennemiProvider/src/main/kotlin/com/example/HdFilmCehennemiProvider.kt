@@ -150,7 +150,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantıları ve Header Korumalı Oynatma
+    // 4. Gelişmiş Video Bağlantı Ayıklama ve Taraması
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -159,33 +159,22 @@ class HdFilmCehennemiProvider : MainAPI() {
     ): Boolean {
         val document = app.get(data, headers = headers).document
         var found = false
-        val candidateUrls = mutableSetOf<String>()
+        val urlsToTest = mutableSetOf<String>()
 
-        document.select("iframe, iframe[data-src], iframe[src]").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
-            if (src.isNotEmpty()) candidateUrls.add(src)
-        }
+        // A. Doğrudan sayfadaki tüm embed/iframe/player URL'lerini yakala
+        document.select("iframe, iframe[data-src], iframe[src], [data-video], [data-url], nav.player-tabs a, button[data-post]").forEach { el ->
+            val src = el.attr("src").ifEmpty { el.attr("data-src") }
+                .ifEmpty { el.attr("data-video") }
+                .ifEmpty { el.attr("data-url") }
+                .ifEmpty { el.attr("href") }.trim()
 
-        document.select("[data-video], [data-url], [data-src], [data-id], .player-tab, button[data-post]").forEach { el ->
-            val attrs = listOf("data-video", "data-url", "data-src", "href")
-            for (attr in attrs) {
-                val valAttr = el.attr(attr).trim()
-                if (valAttr.isNotEmpty() && valAttr != "#" && !valAttr.startsWith("javascript")) {
-                    candidateUrls.add(valAttr)
-                }
+            if (src.isNotEmpty() && src != "#" && !src.startsWith("javascript")) {
+                urlsToTest.add(src)
             }
         }
 
-        val scripts = document.select("script").html()
-        val iframeRegex = Regex("""(?:iframe|file|source|src|link)\s*:\s*["']([^"']+)["']""")
-        iframeRegex.findAll(scripts).forEach { match ->
-            val url = match.groupValues[1]
-            if (url.contains("http") || url.contains("/") || url.contains("embed")) {
-                candidateUrls.add(url)
-            }
-        }
-
-        for (rawUrl in candidateUrls) {
+        // B. Her bir yakalanan bağlantıyı doğrula ve extractor'a ver
+        for (rawUrl in urlsToTest) {
             var url = rawUrl
             if (url.startsWith("//")) {
                 url = "https:$url"
@@ -193,39 +182,43 @@ class HdFilmCehennemiProvider : MainAPI() {
                 url = "$mainUrl$url"
             }
 
-            // Standart Extractor'ları çalıştır
-            val isLoaded = loadExtractor(url, data, subtitleCallback, callback)
-            if (isLoaded) {
+            // Cloudstream'in genel extractor yapısını çalıştır
+            val isExtracted = loadExtractor(url, data, subtitleCallback, callback)
+            if (isExtracted) {
                 found = true
             } else {
+                // Eğer doğrudan çözülemediyse (Örn: HDFilmCehennemi'nin kendi özel player'ı ise)
                 runCatching {
-                    val embedDoc = app.get(url, headers = mapOf("Referer" to data, "User-Agent" to userAgent)).document
+                    val pageRes = app.get(url, headers = mapOf("Referer" to data, "User-Agent" to userAgent))
+                    val innerDoc = pageRes.document
                     
-                    embedDoc.select("iframe").forEach { innerIframe ->
-                        var innerSrc = innerIframe.attr("src").ifEmpty { innerIframe.attr("data-src") }.trim()
-                        if (innerSrc.startsWith("//")) innerSrc = "https:$innerSrc"
-                        if (innerSrc.isNotEmpty()) {
-                            if (loadExtractor(innerSrc, url, subtitleCallback, callback)) {
+                    // Alt iframe'leri kontrol et (Vidmoly, Rapidrame vb.)
+                    innerDoc.select("iframe").forEach { iframe ->
+                        var iframeSrc = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
+                        if (iframeSrc.startsWith("//")) iframeSrc = "https:$iframeSrc"
+                        if (iframeSrc.isNotEmpty()) {
+                            if (loadExtractor(iframeSrc, url, subtitleCallback, callback)) {
                                 found = true
                             }
                         }
                     }
 
-                    val innerScripts = embedDoc.select("script").html()
-                    val httpRegex = Regex("""https?://[^\s"']+\.(?:m3u8|mp4)""")
-                    httpRegex.findAll(innerScripts).forEach { m ->
-                        val videoUrl = m.value
+                    // Doğrudan .m3u8 akışı içeriyorsa ekle
+                    val scriptContent = innerDoc.select("script").html()
+                    val m3u8Regex = Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""")
+                    m3u8Regex.findAll(scriptContent).forEach { match ->
+                        val streamUrl = match.value
                         callback.invoke(
                             ExtractorLink(
-                                source = this.name,
-                                name = "HDFilmCehennemi VIP",
-                                url = videoUrl,
-                                referer = "$mainUrl/",
+                                source = name,
+                                name = "$name - HLS Stream",
+                                url = streamUrl,
+                                referer = url,
                                 quality = Qualities.Unknown.value,
-                                type = if (videoUrl.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                                type = ExtractorLinkType.M3U8,
                                 headers = mapOf(
                                     "User-Agent" to userAgent,
-                                    "Referer" to "$mainUrl/",
+                                    "Referer" to url,
                                     "Origin" to mainUrl
                                 )
                             )

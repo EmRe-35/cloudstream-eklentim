@@ -44,12 +44,12 @@ class ArchiveOrgProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val id = url
-        val metaUrl = "https://archive.org/metadata/$id"
-        val json = JSONObject(app.get(metaUrl).text)
-        val metadata = json.getJSONObject("metadata")
-        val title = metadata.optString("title", id)
-        val description = metadata.optString("description", "")
+    val id = url
+    val metaUrl = "https://archive.org/metadata/$id"
+    val json = JSONObject(app.get(metaUrl).text)
+    val metadata = json.optJSONObject("metadata") ?: JSONObject()
+    val title = metadata.optString("title", id)
+    val description = metadata.optString("description", "")
 
         return newMovieLoadResponse(title, url, TvType.Movie, id) {
             this.posterUrl = "https://archive.org/services/img/$id"

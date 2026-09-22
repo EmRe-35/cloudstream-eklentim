@@ -2,107 +2,141 @@ package com.example
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import org.json.JSONObject
-import java.net.URLEncoder
+import org.jsoup.nodes.Element
 
-class ArchiveOrgProvider : MainAPI() {
-    override var mainUrl = "https://archive.org"
-    override var name = "Archive.org"
+class HdFilmCehennemiProvider : MainAPI() {
+    override var mainUrl = "https://www.hdfilmcehennemi.nl"
+    override var name = "HDFilmCehennemi"
     override val hasMainPage = true
     override var lang = "tr"
-    override val supportedTypes = setOf(TvType.Movie)
+    override val supportedTypes = setOf(
+        TvType.Movie,
+        TvType.TvSeries
+    )
 
+    // 1. Ana Sayfa (Son Eklenenler)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = "https://archive.org/advancedsearch.php?q=mediatype:movies&fl[]=identifier&fl[]=title&rows=20&page=$page&output=json"
-        val json = JSONObject(app.get(url).text)
-        val docs = json.getJSONObject("response").getJSONArray("docs")
+        val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
+        val document = app.get(url).document
 
-        val items = (0 until docs.length()).map { i ->
-            val doc = docs.getJSONObject(i)
-            val id = doc.getString("identifier")
-            val title = doc.optString("title", id)
-            newMovieSearchResponse(title, id, TvType.Movie) {
-                this.posterUrl = "https://archive.org/services/img/$id"
-            }
+        val items = document.select("div.poster, article.poster, div.movie-box").mapNotNull { element ->
+            element.toSearchResult()
         }
-        return newHomePageResponse("Archive.org Filmleri", items)
+
+        return newHomePageResponse("Son Eklenenler", items)
     }
 
+    // 2. Arama Fonksiyonu
     override suspend fun search(query: String): List<SearchResponse> {
-        val url = "https://archive.org/advancedsearch.php?q=title:($query)+AND+mediatype:movies&fl[]=identifier&fl[]=title&rows=20&output=json"
-        val json = JSONObject(app.get(url).text)
-        val docs = json.getJSONObject("response").getJSONArray("docs")
+        val searchUrl = "$mainUrl/search/$query"
+        val document = app.get(searchUrl).document
 
-        return (0 until docs.length()).map { i ->
-            val doc = docs.getJSONObject(i)
-            val id = doc.getString("identifier")
-            val title = doc.optString("title", id)
-            newMovieSearchResponse(title, id, TvType.Movie) {
-                this.posterUrl = "https://archive.org/services/img/$id"
+        return document.select("div.poster, article.poster, div.movie-box").mapNotNull { element ->
+            element.toSearchResult()
+        }
+    }
+
+    private fun Element.toSearchResult(): SearchResponse? {
+        val title = this.selectFirst("h2, .title, a.title, strong")?.text() ?: return null
+        var href = this.selectFirst("a")?.attr("href") ?: return null
+        if (!href.startsWith("http")) {
+            href = "$mainUrl$href"
+        }
+
+        val posterUrl = this.selectFirst("img")?.attr("data-src")
+            ?: this.selectFirst("img")?.attr("src")
+
+        val isTvSeries = href.contains("/dizi/")
+        val type = if (isTvSeries) TvType.TvSeries else TvType.Movie
+
+        return newMovieSearchResponse(title, href, type) {
+            this.posterUrl = posterUrl
+        }
+    }
+
+    // 3. Film ve Dizi Detay Sayfası
+    override suspend fun load(url: String): LoadResponse {
+        val document = app.get(url).document
+        val title = document.selectFirst("h1, header h1, div.title h1")?.text() ?: "Bilinmeyen Başlık"
+        val poster = document.selectFirst("div.poster img, .poster-container img, img.cover")?.attr("src")
+        val plot = document.selectFirst("div.post-content, div.description, p.story, div.overview")?.text()
+
+        val isTvSeries = url.contains("/dizi/")
+
+        return if (isTvSeries) {
+            val episodes = mutableListOf<Episode>()
+            
+            // Dizi Bölümlerini Ayıklama
+            document.select("div.episode-list a, ul.episodes a, div.seasons-list a").forEach { ep ->
+                var epHref = ep.attr("href")
+                if (!epHref.startsWith("http")) epHref = "$mainUrl$epHref"
+                
+                val epName = ep.text().ifBlank { "Bölüm" }
+                episodes.add(
+                    Episode(
+                        data = epHref,
+                        name = epName
+                    )
+                )
+            }
+
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = poster
+                this.plot = plot
+            }
+        } else {
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
+                this.posterUrl = poster
+                this.plot = plot
             }
         }
     }
 
-    override suspend fun load(url: String): LoadResponse {
-        val id = url
-        val metaUrl = "https://archive.org/metadata/$id"
-        val json = JSONObject(app.get(metaUrl).text)
-        val metadata = json.optJSONObject("metadata") ?: JSONObject()
-        val title = metadata.optString("title", id)
-        val description = metadata.optString("description", "")
-
-        return newMovieLoadResponse(title, url, TvType.Movie, id) {
-            this.posterUrl = "https://archive.org/services/img/$id"
-            this.plot = description
-        }
-    }
-
+    // 4. Video Oynatıcı Bağlantılarını Çekme
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val id = data
-        val metaUrl = "https://archive.org/metadata/$id"
-        val responseText = app.get(metaUrl).text
-        val json = JSONObject(responseText)
-        val files = json.optJSONArray("files") ?: return false
-
+        val document = app.get(data).document
         var found = false
-        for (i in 0 until files.length()) {
-            val file = files.getJSONObject(i)
-            val fileName = file.optString("name", "")
-            
-            if (fileName.endsWith(".mp4", ignoreCase = true) || 
-                fileName.endsWith(".mkv", ignoreCase = true) || 
-                fileName.endsWith(".webm", ignoreCase = true)) {
-                
-                // Dosya adındaki boşluk ve özel karakterleri URL formatına dönüştürüyoruz
-                val encodedFileName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20")
-                val videoUrl = "https://archive.org/download/$id/$encodedFileName"
-                
-                // Kalite tespiti (dosya adında veya formatta 720p, 1080p vb. geçiyorsa ayarlayabilirsiniz)
-                val quality = when {
-                    fileName.contains("1080p", ignoreCase = true) -> Qualities.P1080.value
-                    fileName.contains("720p", ignoreCase = true) -> Qualities.P720.value
-                    fileName.contains("480p", ignoreCase = true) -> Qualities.P480.value
-                    else -> Qualities.Unknown.value
-                }
 
-                callback(
-                    ExtractorLink(
-                        source = this.name,
-                        name = fileName,
-                        url = videoUrl,
-                        referer = "$mainUrl/",
-                        quality = quality,
-                        type = ExtractorLinkType.VIDEO // Cloudstream'in direkt video dosyası olduğunu anlamasını sağlar
-                    )
-                )
-                found = true
+        // Sitedeki iframe (video player) adreslerini yakalama
+        val iframes = document.select("iframe, div.video-container iframe, div.player-container iframe")
+
+        for (iframe in iframes) {
+            var src = iframe.attr("src")
+            if (src.isBlank()) src = iframe.attr("data-src")
+
+            if (src.startsWith("//")) {
+                src = "https:$src"
+            }
+
+            if (src.isNotBlank()) {
+                // Vidmoly, Rapidrame, Doodstream vb. Cloudstream dahili çözücüleri ile bağlantıları çözüyoruz
+                val loaded = loadExtractor(src, data, subtitleCallback, callback)
+                if (loaded) {
+                    found = true
+                } else {
+                    // Eğer doğrudan mp4 veya m3u8 adresi yakalanırsa:
+                    if (src.contains(".mp4") || src.contains(".m3u8")) {
+                        callback(
+                            ExtractorLink(
+                                source = this.name,
+                                name = this.name,
+                                url = src,
+                                referer = "$mainUrl/",
+                                quality = Qualities.Unknown.value,
+                                type = if (src.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            )
+                        )
+                        found = true
+                    }
+                }
             }
         }
+
         return found
     }
 }

@@ -17,7 +17,6 @@ class HdFilmCehennemiProvider : MainAPI() {
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-    // Cloudflare Kalkanını Arka Planda Gerçek Chrome ile Aşma İstemcisi
     private val cfInterceptor = CloudflareKiller()
 
     private val headers = mapOf(
@@ -26,7 +25,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         "Accept-Language" to "tr-TR,tr;q=0.9"
     )
 
-    // Helper: İstekleri Cloudflare Interceptor Üzerinden Geçirerek Atar
     private suspend fun getWithCf(url: String): NiceResponse {
         return app.get(
             url = url,
@@ -35,13 +33,12 @@ class HdFilmCehennemiProvider : MainAPI() {
         )
     }
 
-    // 1. Ana Sayfa (Tüm içeriklerin eksiksiz listelenmesi için)
+    // 1. Ana Sayfa
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
         val document = getWithCf(url).document
         val homePages = mutableListOf<HomePageList>()
 
-        // Sitedeki tüm film/dizi kartlarını kapsayan geniş seçici
         val allItems = document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card, div.content-box a").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
@@ -120,7 +117,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantılarını Çözme
+    // 4. Video Oynatıcı Bağlantılarını Çözme (Düzeltildi)
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -130,7 +127,9 @@ class HdFilmCehennemiProvider : MainAPI() {
         val document = getWithCf(data).document
         var found = false
 
-        document.select("iframe[src], iframe[data-src]").forEach { iframe ->
+        // forEach yerine doğrudan element listesini döngüye alıyoruz
+        val iframes = document.select("iframe[src], iframe[data-src]")
+        for (iframe in iframes) {
             var src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
             if (src.startsWith("//")) src = "https:$src"
 

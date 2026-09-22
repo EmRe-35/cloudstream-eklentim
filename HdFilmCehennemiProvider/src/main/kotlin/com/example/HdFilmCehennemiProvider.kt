@@ -14,16 +14,30 @@ class HdFilmCehennemiProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    // 1. Ana Sayfa
+    // 1. Ana Sayfa (Birden Fazla Sekme/Kategori)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
-        val document = app.get(url).document
+        val document = app.get(mainUrl).document
+        val homePages = mutableListOf<HomePageList>()
 
-        val items = document.select("a.poster, div.poster, article.poster, div.card, div.movie-box, article").mapNotNull { element ->
+        // Son Eklenenler
+        val recentItems = document.select("a.poster, div.poster, article.poster, div.card, div.movie-box, article").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
 
-        return newHomePageResponse("Son Eklenenler", items)
+        if (recentItems.isNotEmpty()) {
+            homePages.add(HomePageList("Son Eklenenler", recentItems))
+        }
+
+        // Popüler Filmler (Sitede Varsa)
+        val popularItems = document.select("div.popular-slider a, div.top-movies a, div.sidebar-poster").mapNotNull { element ->
+            element.toSearchResult()
+        }.distinctBy { it.url }
+
+        if (popularItems.isNotEmpty()) {
+            homePages.add(HomePageList("Popüler", popularItems))
+        }
+
+        return newHomePageResponse(homePages)
     }
 
     // 2. Arama
@@ -37,7 +51,6 @@ class HdFilmCehennemiProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        // Link bulma
         var href = if (this.tagName() == "a") {
             this.attr("href")
         } else {
@@ -49,7 +62,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             href = "$mainUrl$href"
         }
 
-        // Başlık bulma
         val titleEl = this.selectFirst("h2, h3, .title, a.title, strong, img")
         val rawTitle = if (titleEl != null && titleEl.tagName() == "img") {
             titleEl.attr("alt")
@@ -59,7 +71,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         val title = rawTitle.trim()
         if (title.isEmpty()) return null
 
-        // Afiş bulma
         val imgEl = this.selectFirst("img")
         var posterUrl: String? = null
         if (imgEl != null) {
@@ -132,7 +143,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantıları
+    // 4. Video Oynatıcı Bağlantılarını Çekme (Düzeltildi)
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -142,35 +153,48 @@ class HdFilmCehennemiProvider : MainAPI() {
         val document = app.get(data).document
         var found = false
 
-        val iframes = document.select("iframe, div.video-container iframe, div.player-container iframe")
+        // 1. Tüm Player Tabları ve iframe Linkleri
+        val iframeUrls = mutableListOf<String>()
 
-        for (iframe in iframes) {
-            val srcAttr = iframe.attr("src").trim()
-            val dataSrcAttr = iframe.attr("data-src").trim()
-            var src = if (srcAttr.isNotEmpty()) srcAttr else dataSrcAttr
+        document.select("iframe, div.video-container iframe, div.player-container iframe").forEach { iframe ->
+            val src = iframe.attr("src").trim().ifEmpty { iframe.attr("data-src").trim() }
+            if (src.isNotEmpty()) iframeUrls.add(src)
+        }
 
-            if (src.startsWith("//")) {
-                src = "https:$src"
+        // Alternatif Player Butonları / Tabları
+        document.select("nav.player-tabs button, nav.player-tabs a, div.alternative-links a, [data-video], [data-url]").forEach { element ->
+            val videoUrl = element.attr("data-video").trim().ifEmpty { element.attr("data-url").trim().ifEmpty { element.attr("href").trim() } }
+            if (videoUrl.isNotEmpty() && videoUrl != "#" && !videoUrl.startsWith("javascript")) {
+                iframeUrls.add(videoUrl)
+            }
+        }
+
+        for (rawUrl in iframeUrls.distinct()) {
+            var url = rawUrl
+            if (url.startsWith("//")) {
+                url = "https:$url"
+            } else if (!url.startsWith("http")) {
+                url = "$mainUrl$url"
             }
 
-            if (src.isNotEmpty()) {
-                val loaded = loadExtractor(src, data, subtitleCallback, callback)
-                if (loaded) {
-                    found = true
-                } else {
-                    if (src.contains(".mp4") || src.contains(".m3u8")) {
-                        callback(
-                            ExtractorLink(
-                                source = this.name,
-                                name = this.name,
-                                url = src,
-                                referer = "$mainUrl/",
-                                quality = Qualities.Unknown.value,
-                                type = if (src.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                            )
+            // Extractor'lara Gönder (Vidmoly, Rapidrame, Doodstream, Hqq vb.)
+            val loaded = loadExtractor(url, data, subtitleCallback, callback)
+            if (loaded) {
+                found = true
+            } else {
+                // Doğrudan .mp4 veya .m3u8 linkiyse
+                if (url.contains(".mp4") || url.contains(".m3u8")) {
+                    callback(
+                        ExtractorLink(
+                            source = this.name,
+                            name = this.name,
+                            url = url,
+                            referer = "$mainUrl/",
+                            quality = Qualities.Unknown.value,
+                            type = if (url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                         )
-                        found = true
-                    }
+                    )
+                    found = true
                 }
             }
         }

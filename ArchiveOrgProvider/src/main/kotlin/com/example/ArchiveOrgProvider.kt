@@ -66,7 +66,7 @@ class ArchiveOrgProvider : MainAPI() {
         val id = data
         val metaUrl = "https://archive.org/metadata/$id"
         val json = JSONObject(app.get(metaUrl).text)
-        val files = json.getJSONArray("files")
+        val files = json.optJSONArray("files") ?: return false
 
         var found = false
         for (i in 0 until files.length()) {

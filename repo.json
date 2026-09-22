@@ -1,1 +1,8 @@
-
+{
+  "name": "Benim Reposum",
+  "description": "Archive.org eklentisi",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/EmRe-35/cloudstream-eklentim/builds/plugins.json"
+  ]
+}

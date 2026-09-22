@@ -33,19 +33,17 @@ jobs:
 
       - name: Derlenen dosyaları 'builds' branch'ine yayınla
         run: |
+          mkdir -p /tmp/cs-out
+          find . -name "*.cs3" -exec cp {} /tmp/cs-out/ \;
+          cp plugins.json /tmp/cs-out/ 2>/dev/null || true
+
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
           git checkout --orphan builds-temp
           git rm -rf . > /dev/null 2>&1 || true
 
-          mkdir -p out
-          find . -name "*.cs3" -exec cp {} out/ \;
-          cp plugins.json out/ 2>/dev/null || true
-
-          rm -rf $(ls -A | grep -v out)
-          mv out/* .
-          rmdir out
+          cp /tmp/cs-out/* .
 
           git add -A
           git commit -m "Otomatik derleme: ${{ github.sha }}"

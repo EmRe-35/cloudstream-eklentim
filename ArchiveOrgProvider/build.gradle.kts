@@ -1,3 +1,5 @@
+version = 1
+
 cloudstream {
     language = "tr"
     description = "Archive.org üzerinden telifsiz/açık arşiv içeriği"
@@ -5,10 +7,4 @@ cloudstream {
     status = 1
     tvTypes = listOf("Movie")
     iconUrl = "https://archive.org/favicon.ico"
-}
-
-android {
-    defaultConfig {
-        versionCode = 1
-    }
 }

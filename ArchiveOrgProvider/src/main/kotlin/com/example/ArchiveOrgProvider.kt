@@ -72,7 +72,9 @@ class ArchiveOrgProvider : MainAPI() {
         for (i in 0 until files.length()) {
             val file = files.getJSONObject(i)
             val name = file.getString("name")
-            if (name.endsWith(".mp4")) {
+            if (name.endsWith(".mp4", ignoreCase = true) || 
+                name.endsWith(".mkv", ignoreCase = true) || 
+                name.endsWith(".webm", ignoreCase = true)) {
                 val videoUrl = "https://archive.org/download/$id/$name"
                 callback(
     newExtractorLink(

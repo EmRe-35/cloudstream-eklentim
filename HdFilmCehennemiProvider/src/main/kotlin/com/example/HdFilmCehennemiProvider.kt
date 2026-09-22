@@ -28,7 +28,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         val document = app.get(url, headers = headers).document
         val homePages = mutableListOf<HomePageList>()
 
-        // Ana sayfadaki tüm film kartlarını kapsayacak geniş seçici
         val allItems = document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card, div.content-box a").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
@@ -37,7 +36,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             homePages.add(HomePageList("Son Eklenenler / Öne Çıkanlar", allItems))
         }
 
-        // Kategori / IMDb Blokları
         val categoryItems = document.select("div.col-md-2 a, div.col-6 a, div.sidebar a").mapNotNull { element ->
             element.toSearchResult()
         }.distinctBy { it.url }
@@ -152,7 +150,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantılarını Derinlemesine Çözümleme
+    // 4. Video Oynatıcı Bağlantıları
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -163,13 +161,11 @@ class HdFilmCehennemiProvider : MainAPI() {
         var found = false
         val candidateUrls = mutableSetOf<String>()
 
-        // A. Doğrudan HTML'deki İframe / Video Linklerini Tara
         document.select("iframe, iframe[data-src], iframe[src]").forEach { iframe ->
             val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
             if (src.isNotEmpty()) candidateUrls.add(src)
         }
 
-        // B. Sitedeki Alternatif Oynatıcı (Tab) Butonlarını ve Veri Özniteliklerini Tara
         document.select("[data-video], [data-url], [data-src], [data-id], .player-tab, button[data-post]").forEach { el ->
             val attrs = listOf("data-video", "data-url", "data-src", "href")
             for (attr in attrs) {
@@ -180,7 +176,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             }
         }
 
-        // C. Sitedeki inline JavaScriptKodları İçindeki Video/Iframe/AJAX URL'lerini Regex ile Yakala
         val scripts = document.select("script").html()
         val iframeRegex = Regex("""(?:iframe|file|source|src|link)\s*:\s*["']([^"']+)["']""")
         iframeRegex.findAll(scripts).forEach { match ->
@@ -190,7 +185,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             }
         }
 
-        // D. Yakalanan Tüm Bağlantıları Extractor'lara veya İkinci Derece İframe'lere Gönder
         for (rawUrl in candidateUrls) {
             var url = rawUrl
             if (url.startsWith("//")) {
@@ -199,16 +193,13 @@ class HdFilmCehennemiProvider : MainAPI() {
                 url = "$mainUrl$url"
             }
 
-            // Doğrudan Extractor'a Gönder
             val isLoaded = loadExtractor(url, data, subtitleCallback, callback)
             if (isLoaded) {
                 found = true
             } else {
-                // Eğer doğrudan yüklenemediyse, alt player/embed sayfasını indirip içindeki iframe'i tara
                 runCatching {
                     val embedDoc = app.get(url, headers = mapOf("Referer" to data, "User-Agent" to userAgent)).document
                     
-                    // Alt iframe'leri tara
                     embedDoc.select("iframe").forEach { innerIframe ->
                         var innerSrc = innerIframe.attr("src").ifEmpty { innerIframe.attr("data-src") }.trim()
                         if (innerSrc.startsWith("//")) innerSrc = "https:$innerSrc"
@@ -219,7 +210,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         }
                     }
 
-                    // Alt scriptler içindeki gizli video url'lerini tara (Rapidrame, Vidmoly vb.)
                     val innerScripts = embedDoc.select("script").html()
                     val httpRegex = Regex("""https?://[^\s"']+\.(?:m3u8|mp4)""")
                     httpRegex.findAll(innerScripts).forEach { m ->
@@ -231,7 +221,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 url = videoUrl,
                                 referer = url,
                                 quality = Qualities.Unknown.value,
-                                isM3u8 = videoUrl.contains("m3u8")
+                                type = if (videoUrl.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                             )
                         )
                         found = true

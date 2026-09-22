@@ -1,8 +1,8 @@
 version = 1
 
 cloudstream {
-    // Eklenti ana sınıfının ismi (.kt dosyanızdaki class ismiyle BİREBİR aynı olmalı)
-    setPluginEntry("HdFilmCehennemiProvider")
+    // Cloudstream Gradle eklentisinde ana sınıf tanımı bu şekilde yapılır
+    pluginClass = "com.example.HdFilmCehennemiProvider"
     
     language = "tr"
     description = "HDFilmCehennemi üzerinden film ve dizi izleme eklentisi"

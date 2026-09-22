@@ -76,8 +76,23 @@ class HdFilmCehennemiProvider : MainAPI() {
         if (title.isEmpty()) return null
 
         val imgEl = this.selectFirst("img")
-        var posterUrl = imgEl?.attr("data-src")?.ifEmpty { imgEl.attr("data-lazy-src") }?.ifEmpty { imgEl.attr("src") }
-        if (posterUrl != null && !posterUrl.startsWith("http")) posterUrl = "$mainUrl$posterUrl"
+        var posterUrl: String? = null
+        if (imgEl != null) {
+            val dataSrc = imgEl.attr("data-src").trim()
+            val dataLazySrc = imgEl.attr("data-lazy-src").trim()
+            val src = imgEl.attr("src").trim()
+            
+            posterUrl = when {
+                dataSrc.isNotEmpty() -> dataSrc
+                dataLazySrc.isNotEmpty() -> dataLazySrc
+                src.isNotEmpty() -> src
+                else -> null
+            }
+        }
+
+        if (posterUrl != null && !posterUrl.startsWith("http")) {
+            posterUrl = "$mainUrl$posterUrl"
+        }
 
         val isTvSeries = href.contains("/dizi/")
         val type = if (isTvSeries) TvType.TvSeries else TvType.Movie
@@ -92,7 +107,14 @@ class HdFilmCehennemiProvider : MainAPI() {
         val document = getWithCf(url).document
         val title = document.selectFirst("h1, header h1")?.text()?.trim() ?: "Film"
         val imgEl = document.selectFirst("div.poster img, article img")
-        val poster = imgEl?.attr("data-src")?.ifEmpty { imgEl.attr("src") }
+        
+        var poster: String? = null
+        if (imgEl != null) {
+            val dataSrc = imgEl.attr("data-src").trim()
+            val src = imgEl.attr("src").trim()
+            poster = if (dataSrc.isNotEmpty()) dataSrc else src
+        }
+
         val plot = document.selectFirst("div.post-content, p.story, div.overview")?.text()?.trim()
         val isTvSeries = url.contains("/dizi/")
 
@@ -117,7 +139,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantılarını Çözme (Düzeltildi)
+    // 4. Video Oynatıcı Bağlantılarını Çözme
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -127,10 +149,12 @@ class HdFilmCehennemiProvider : MainAPI() {
         val document = getWithCf(data).document
         var found = false
 
-        // forEach yerine doğrudan element listesini döngüye alıyoruz
         val iframes = document.select("iframe[src], iframe[data-src]")
         for (iframe in iframes) {
-            var src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
+            val srcAttr = iframe.attr("src").trim()
+            val dataSrcAttr = iframe.attr("data-src").trim()
+            var src = if (srcAttr.isNotEmpty()) srcAttr else dataSrcAttr
+
             if (src.startsWith("//")) src = "https:$src"
 
             if (src.isNotEmpty() && !src.contains("facebook") && !src.contains("google")) {

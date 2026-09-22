@@ -82,7 +82,6 @@ class ArchiveOrgProvider : MainAPI() {
     ) {
         this.referer = mainUrl
         this.quality = Qualities.Unknown.value
-        this.isM3u8 = false
     }
 )
                 found = true

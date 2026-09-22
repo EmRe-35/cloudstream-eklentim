@@ -1,5 +1,6 @@
 package com.example
 
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.json.JSONObject
@@ -74,15 +75,16 @@ class ArchiveOrgProvider : MainAPI() {
             if (name.endsWith(".mp4")) {
                 val videoUrl = "https://archive.org/download/$id/$name"
                 callback(
-                    ExtractorLink(
-                        source = name,
-                        name = name,
-                        url = videoUrl,
-                        referer = mainUrl,
-                        quality = Qualities.Unknown.value,
-                        isM3u8 = false
-                    )
-                )
+    newExtractorLink(
+        source = name,
+        name = name,
+        url = videoUrl
+    ) {
+        this.referer = mainUrl
+        this.quality = Qualities.Unknown.value
+        this.isM3u8 = false
+    }
+)
                 found = true
             }
         }

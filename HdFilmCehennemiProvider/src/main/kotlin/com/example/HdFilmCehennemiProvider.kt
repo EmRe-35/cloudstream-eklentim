@@ -150,7 +150,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    // 4. Video Oynatıcı Bağlantıları
+    // 4. Video Oynatıcı Bağlantıları ve Header Korumalı Oynatma
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -193,6 +193,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                 url = "$mainUrl$url"
             }
 
+            // Standart Extractor'ları çalıştır
             val isLoaded = loadExtractor(url, data, subtitleCallback, callback)
             if (isLoaded) {
                 found = true
@@ -217,11 +218,16 @@ class HdFilmCehennemiProvider : MainAPI() {
                         callback.invoke(
                             ExtractorLink(
                                 source = this.name,
-                                name = "HDFilmCehennemi Özel",
+                                name = "HDFilmCehennemi VIP",
                                 url = videoUrl,
-                                referer = url,
+                                referer = "$mainUrl/",
                                 quality = Qualities.Unknown.value,
-                                type = if (videoUrl.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                type = if (videoUrl.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                                headers = mapOf(
+                                    "User-Agent" to userAgent,
+                                    "Referer" to "$mainUrl/",
+                                    "Origin" to mainUrl
+                                )
                             )
                         )
                         found = true

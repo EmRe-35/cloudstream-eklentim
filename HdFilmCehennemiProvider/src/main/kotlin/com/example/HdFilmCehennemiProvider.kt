@@ -14,16 +14,28 @@ class HdFilmCehennemiProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    // Gerçek bir Windows 11 Chrome 128 Tarayıcı Kimliği
+    private val browserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-    private val headers = mapOf(
-        "User-Agent" to userAgent,
-        "Referer" to "$mainUrl/"
+    // Sıradan bir masaüstü tarayıcının attığı BİREBİR HTTP Başlıkları
+    private val browserHeaders = mapOf(
+        "User-Agent" to browserUserAgent,
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Sec-Ch-Ua" to "\"Chromium\";v=\"128\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"128\"",
+        "Sec-Ch-Ua-Mobile" to "?0",
+        "Sec-Ch-Ua-Platform" to "\"Windows\"",
+        "Sec-Fetch-Dest" to "document",
+        "Sec-Fetch-Mode" to "navigate",
+        "Sec-Fetch-Site" to "same-origin",
+        "Sec-Fetch-User" to "?1",
+        "Upgrade-Insecure-Requests" to "1"
     )
 
+    // 1. Ana Sayfa
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) "$mainUrl/" else "$mainUrl/page/$page/"
-        val document = app.get(url, headers = headers).document
+        val document = app.get(url, headers = browserHeaders).document
         val homePages = mutableListOf<HomePageList>()
 
         val allItems = document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card").mapNotNull { element ->
@@ -37,9 +49,10 @@ class HdFilmCehennemiProvider : MainAPI() {
         return newHomePageResponse(homePages)
     }
 
+    // 2. Arama
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/search/$query"
-        val document = app.get(searchUrl, headers = headers).document
+        val document = app.get(searchUrl, headers = browserHeaders).document
 
         return document.select("a.poster, article.poster, div.poster, div.movie-box, article, div.card").mapNotNull { element ->
             element.toSearchResult()
@@ -73,8 +86,9 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
+    // 3. Detay Sayfası
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url, headers = headers).document
+        val document = app.get(url, headers = browserHeaders).document
         val title = document.selectFirst("h1")?.text()?.trim() ?: "Film"
         val imgEl = document.selectFirst("div.poster img, article img")
         val poster = imgEl?.attr("data-src")?.ifEmpty { imgEl.attr("src") }
@@ -102,23 +116,41 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
+    // 4. Tarayıcı Taklidi ile Link Çekme
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data, headers = headers).document
+        // Filmin kendi sayfasına sıradan bir tarayıcı gibi istek atıyoruz
+        val pageHeaders = browserHeaders.toMutableMap().apply {
+            put("Referer", "$mainUrl/")
+        }
+        val document = app.get(data, headers = pageHeaders).document
         var found = false
 
-        // Sitedeki tüm iframe URL'lerini ayıkla
+        // Iframe'leri tara
         document.select("iframe[src], iframe[data-src]").forEach { iframe ->
             var src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.trim()
             if (src.startsWith("//")) src = "https:$src"
+
             if (src.isNotEmpty() && !src.contains("facebook") && !src.contains("google")) {
-                if (loadExtractor(src, data, subtitleCallback, callback)) {
-                    found = true
+                // Video sunucusuna giderken de tam tarayıcı başlıklarını iletiyoruz
+                val loaded = loadExtractor(src, data, subtitleCallback) { link ->
+                    // Oynatıcıya giden ExtractorLink içine de tarayıcı başlıklarını gömüyoruz
+                    val newLink = ExtractorLink(
+                        source = link.source,
+                        name = link.name,
+                        url = link.url,
+                        referer = data,
+                        quality = link.quality,
+                        type = link.type,
+                        headers = browserHeaders + mapOf("Referer" to data, "Origin" to mainUrl)
+                    )
+                    callback.invoke(newLink)
                 }
+                if (loaded) found = true
             }
         }
 

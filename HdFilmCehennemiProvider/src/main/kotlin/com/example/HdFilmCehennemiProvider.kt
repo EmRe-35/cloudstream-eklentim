@@ -202,7 +202,7 @@ class HdFilmCehennemiProvider : MainAPI() {
             contentUrl,
             type
         ) {
-        this.posterUrl = posterUrl
+         this.posterUrl = posterUrl
         }
     }
     override suspend fun load(

@@ -21,9 +21,8 @@ class HdFilmCehennemiProvider : MainAPI() {
     )
 
     private val userAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/128.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36"
 
     private val headers = mapOf(
         "User-Agent" to userAgent,
@@ -32,9 +31,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         "Referer" to "$mainUrl/"
     )
 
-    /*
-     * Ana sayfa kategorileri
-     */
     override val mainPage = mainPageOf(
         "$mainUrl/category/film-izle-2/" to "Son Eklenenler",
         "$mainUrl/category/nette-ilk-filmler-1/" to "Nette İlk",
@@ -140,19 +136,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         return emptyList()
     }
 
-    /*
-     * Film listesini parse eder.
-     *
-     * HDFilmCehennemi'ndeki gerçek kartlar:
-     *
-     * <a class="poster poster-slider"
-     *    href="..."
-     *    title="...">
-     *
-     *     <img data-src="...">
-     *
-     * </a>
-     */
     private fun parseResults(
         document: Document
     ): List<SearchResponse> {
@@ -160,9 +143,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         val results: MutableList<SearchResponse> =
             mutableListOf()
 
-        /*
-         * Öncelikli gerçek film kartı selector'ü.
-         */
         val posterElements: Elements =
             document.select("a.poster[href]")
 
@@ -176,11 +156,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             }
         }
 
-        /*
-         * Bazı arama/kategori sayfalarında farklı kart
-         * yapısı olabilir. Eğer poster selector'ü hiçbir
-         * sonuç vermezse eski alternatif selector'leri dene.
-         */
         if (results.isEmpty()) {
 
             val fallbackSelector: String =
@@ -484,20 +459,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    /*
-     * Video kaynaklarını bulur.
-     *
-     * ÖNEMLİ:
-     *
-     * HDFilmCehennemi sayfasındaki:
-     *
-     * data-video="322665"
-     *
-     * doğrudan video URL'si değildir.
-     *
-     * Bu nedenle artık data-video değerini URL gibi
-     * extractor'a göndermiyoruz.
-     */
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -505,239 +466,54 @@ class HdFilmCehennemiProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
 
-        val pageUrl: String =
-            normalizeUrl(data)
+        /*
+         * GEÇİCİ TEST
+         *
+         * Bu M3U8 bağlantısı PCAPdroid üzerinden gerçek
+         * Rapidrame oynatıcısından yakalandı.
+         *
+         * Link süreli olduğu için daha sonra otomatik olarak
+         * alınacak hale getireceğiz.
+         */
 
-        val candidateUrls: MutableSet<String> =
-            linkedSetOf()
-
-        var found: Boolean = false
+        val testM3u8 =
+            "https://s230.rapidrame.com/hls2/01/00036/jzkqxar12lb8_,l,.urlset/master.m3u8?t=mX_Z97sTvgVBaJUY2izhdVpvxnqvHF889OvUNjdCJJU&s=1790188764&e=14400&f=184560&srv=s427&i=0.0&sp=0&n=x34r343utshsqale&p1=s230&p2=s230"
 
         try {
 
-            val document: Document =
-                app.get(
-                    pageUrl,
-                    headers = headers
-                ).document
+            callback(
+                newExtractorLink(
+                    source = this.name,
+                    name = "Rapidrame Test",
+                    url = testM3u8,
+                    type = ExtractorLinkType.M3U8
+                ) {
 
-            /*
-             * 1. IFRAME kaynakları
-             */
-            val iframeElements: Elements =
-                document.select(
-                    "iframe[src]," +
-                        "iframe[data-src]," +
-                        "iframe[data-url]"
-                )
+                    referer = "https://hdfilmcehennemi.mobi/"
 
-            for (iframe: Element in iframeElements) {
+                    quality =
+                        Qualities.Unknown.value
 
-                addCandidate(
-                    candidateUrls,
-                    iframe.attr("src")
-                )
-
-                addCandidate(
-                    candidateUrls,
-                    iframe.attr("data-src")
-                )
-
-                addCandidate(
-                    candidateUrls,
-                    iframe.attr("data-url")
-                )
-            }
-
-            /*
-             * 2. Doğrudan video kaynakları
-             */
-            val sourceElements: Elements =
-                document.select(
-                    "video source[src]," +
-                        "video[src]," +
-                        "source[src]"
-                )
-
-            for (source: Element in sourceElements) {
-
-                addCandidate(
-                    candidateUrls,
-                    source.attr("src")
-                )
-            }
-
-            /*
-             * 3. HDFilmCehennemi alternatif player'ları
-             *
-             * Burada sadece gerçek URL içeren attribute'ları
-             * kontrol ediyoruz.
-             *
-             * data-video="322665" gibi numeric ID'leri
-             * candidate olarak eklemiyoruz.
-             */
-            val alternativeElements: Elements =
-                document.select(
-                    "button.alternative-link"
-                )
-
-            for (element: Element in alternativeElements) {
-
-                val dataUrl: String? =
-                    firstNonBlank(
-                        element.attr("data-url"),
-                        element.attr("data-src"),
-                        element.attr("data-player"),
-                        element.attr("data-stream"),
-                        element.attr("data-file")
-                    )
-
-                addCandidate(
-                    candidateUrls,
-                    dataUrl
-                )
-            }
-
-            /*
-             * 4. Sayfada doğrudan bulunan M3U8/MP4 adresleri
-             */
-            val mediaElements: Elements =
-                document.select(
-                    "[src*='.m3u8']," +
-                        "[data-src*='.m3u8']," +
-                        "[src*='.mp4']," +
-                        "[data-src*='.mp4']"
-                )
-
-            for (element: Element in mediaElements) {
-
-                addCandidate(
-                    candidateUrls,
-                    element.attr("src")
-                )
-
-                addCandidate(
-                    candidateUrls,
-                    element.attr("data-src")
-                )
-            }
-
-            /*
-             * Bulunan her gerçek URL'yi CloudStream extractor
-             * sistemine gönder.
-             */
-            for (candidate: String in candidateUrls) {
-
-                try {
-
-                    /*
-                     * Eğer kaynak doğrudan M3U8 ise extractor'a
-                     * gerek kalmadan CloudStream'e ver.
-                     */
-                    if (
-                        candidate.contains(
-                            ".m3u8",
-                            ignoreCase = true
-                        )
-                    ) {
-
-                        callback.invoke(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "HDFilmCehennemi",
-                                url = candidate,
-                                type = ExtractorLinkType.M3U8
-                            ) {
-
-                                referer = pageUrl
-
-                                quality =
-                                    Qualities.Unknown.value
-
-                                headers = mapOf(
-                                    "User-Agent" to userAgent,
-                                    "Referer" to pageUrl
-                                )
-                            }
-                        )
-
-                        found = true
-
-                        continue
-                    }
-
-                    /*
-                     * MP4 doğrudan kaynak ise.
-                     */
-                    if (
-                        candidate.contains(
-                            ".mp4",
-                            ignoreCase = true
-                        )
-                    ) {
-
-                        callback.invoke(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "HDFilmCehennemi",
-                                url = candidate
-                            ) {
-
-                                referer = pageUrl
-
-                                quality =
-                                    Qualities.Unknown.value
-
-                                headers = mapOf(
-                                    "User-Agent" to userAgent,
-                                    "Referer" to pageUrl
-                                )
-                            }
-                        )
-
-                        found = true
-
-                        continue
-                    }
-
-                    /*
-                     * Rapidrame / Vidmoly vb. harici player.
-                     */
-                    val extractorFound: Boolean =
-                        loadExtractor(
-                            candidate,
-                            pageUrl,
-                            subtitleCallback,
-                            callback
-                        )
-
-                    if (extractorFound) {
-                        found = true
-                    }
-
-                } catch (error: Exception) {
-
-                    logError(
-                        "Extractor başarısız: $candidate",
-                        error
+                    headers = mapOf(
+                        "User-Agent" to userAgent,
+                        "Referer" to "https://hdfilmcehennemi.mobi/"
                     )
                 }
-            }
+            )
+
+            return true
 
         } catch (error: Exception) {
 
             logError(
-                "Video kaynakları yüklenemedi: $pageUrl",
+                "Rapidrame M3U8 bağlantısı oluşturulamadı",
                 error
             )
-        }
 
-        return found
+            return false
+        }
     }
 
-    /*
-     * URL'yi güvenli şekilde candidate listesine ekler.
-     */
     private fun addCandidate(
         candidates: MutableSet<String>,
         rawUrl: String?
@@ -780,9 +556,6 @@ class HdFilmCehennemiProvider : MainAPI() {
         return elements.firstOrNull()
     }
 
-    /*
-     * URL normalizasyonu.
-     */
     private fun normalizeUrl(
         rawUrl: String?
     ): String {
@@ -820,10 +593,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             url.contains("/tv/")
     }
 
-    /*
-     * Sadece HDFilmCehennemi içindeki gerçek içerik
-     * sayfalarını kabul eder.
-     */
     private fun isValidContentUrl(
         url: String
     ): Boolean {

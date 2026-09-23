@@ -202,7 +202,7 @@ class HdFilmCehennemiProvider : MainAPI() {
             contentUrl,
             type
         ) {
-            posterUrl = posterUrl
+        this.posterUrl = posterUrl
         }
     }
     override suspend fun load(
@@ -272,7 +272,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                     TvType.TvSeries,
                     episodes
                 ) {
-                    posterUrl = poster
+                this.posterUrl = poster
                     this.plot = plot
                 }
             } else {
@@ -282,7 +282,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                     TvType.Movie,
                     pageUrl
                 ) {
-                    posterUrl = poster
+                    this.posterUrl = poster
                     this.plot = plot
                 }
             }

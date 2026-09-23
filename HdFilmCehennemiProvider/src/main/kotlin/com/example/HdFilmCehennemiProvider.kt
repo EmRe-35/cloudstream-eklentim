@@ -667,7 +667,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                             ) % 256
 
                     output.append(
-                        charCode.toChar()
+                        charCode.toInt().toChar()
                     )
                 }
 

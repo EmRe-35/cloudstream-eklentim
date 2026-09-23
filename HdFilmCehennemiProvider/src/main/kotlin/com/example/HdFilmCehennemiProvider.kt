@@ -22,175 +22,243 @@ class HdFilmCehennemiProvider : MainAPI() {
 
     private val userAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/128.0.0.0 Safari/537.36"
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/128.0.0.0 Safari/537.36"
 
-    private val headers = mapOf(
+    private val defaultHeaders = mapOf(
         "User-Agent" to userAgent,
         "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
         "Referer" to "$mainUrl/"
     )
 
+    /**
+     * Ana sayfada gösterilecek kategoriler.
+     *
+     * URL'ler HDFilmCehennemi'nin mevcut kategori yapısına göre
+     * düzenlenmiştir.
+     */
+    private val homeCategories = listOf(
+        "Son Eklenenler" to "$mainUrl/category/film-izle-2/",
+        "Nette İlk" to "$mainUrl/category/nette-ilk-filmler-1/",
+        "Tavsiye Filmler" to "$mainUrl/category/tavsiye-filmler-izle3/",
+        "Aksiyon" to "$mainUrl/tur/aksiyon-filmleri-izleyin-8/",
+        "Komedi" to "$mainUrl/tur/komedi-filmlerini-izleyin-2/",
+        "1080p Filmler" to "$mainUrl/category/1080p-hd-film-izle-5/"
+    )
+
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val currentPage: Int = page.coerceAtLeast(1)
 
-        val pageUrl: String = if (currentPage == 1) {
-            "$mainUrl/"
-        } else {
-            "$mainUrl/page/$currentPage/"
-        }
+        val currentPage = page.coerceAtLeast(1)
 
-        return try {
-            val document: Document = app.get(
-                pageUrl,
-                headers = headers
-            ).document
+        val lists = mutableListOf<HomePageList>()
 
-            val results: List<SearchResponse> =
-                parseResults(document)
+        for ((categoryName, baseUrl) in homeCategories) {
 
-            newHomePageResponse(
-                listOf(
-                    HomePageList(
-                        "Son Eklenenler",
-                        results,
-                        isHorizontalImages = true
+            try {
+
+                val pageUrl = buildPageUrl(
+                    baseUrl,
+                    currentPage
+                )
+
+                val document = app.get(
+                    pageUrl,
+                    headers = defaultHeaders
+                ).document
+
+                val results = parseResults(document)
+
+                if (results.isNotEmpty()) {
+                    lists.add(
+                        HomePageList(
+                            categoryName,
+                            results,
+                            isHorizontalImages = true
+                        )
                     )
-                ),
-                hasNext = results.isNotEmpty()
-            )
-        } catch (error: Exception) {
-            logError("Ana sayfa yüklenemedi: $pageUrl", error)
+                }
 
-            newHomePageResponse(
-                emptyList(),
-                hasNext = false
-            )
+            } catch (e: Exception) {
+                logError(
+                    "Kategori yüklenemedi: $categoryName",
+                    e
+                )
+            }
         }
+
+        return newHomePageResponse(
+            lists,
+            hasNext = lists.any { it.list.isNotEmpty() }
+        )
+    }
+
+    /**
+     * WordPress benzeri sayfalama.
+     *
+     * 1. sayfada kategori URL'si,
+     * sonraki sayfalarda /page/N/ kullanılır.
+     */
+    private fun buildPageUrl(
+        baseUrl: String,
+        page: Int
+    ): String {
+
+        if (page <= 1) {
+            return baseUrl
+        }
+
+        return baseUrl.trimEnd('/') + "/page/$page/"
     }
 
     override suspend fun search(
         query: String
     ): List<SearchResponse> {
-        val encodedQuery: String = URLEncoder
+
+        val encodedQuery = URLEncoder
             .encode(query.trim(), "UTF-8")
             .replace("+", "%20")
 
-        val searchUrls: List<String> = listOf(
-            "$mainUrl/search/$encodedQuery/",
-            "$mainUrl/?s=$encodedQuery"
+        val urls = listOf(
+            "$mainUrl/?s=$encodedQuery",
+            "$mainUrl/search/$encodedQuery/"
         )
 
-        for (searchUrl: String in searchUrls) {
+        for (url in urls) {
+
             try {
-                val document: Document = app.get(
-                    searchUrl,
-                    headers = headers
+
+                val document = app.get(
+                    url,
+                    headers = defaultHeaders
                 ).document
 
-                val results: List<SearchResponse> =
-                    parseResults(document)
+                val results = parseResults(document)
 
                 if (results.isNotEmpty()) {
                     return results
                 }
-            } catch (error: Exception) {
-                logError("Arama başarısız: $searchUrl", error)
+
+            } catch (e: Exception) {
+
+                logError(
+                    "Arama başarısız: $url",
+                    e
+                )
             }
         }
 
         return emptyList()
     }
 
+    /**
+     * Film/dizi kartlarını bulur.
+     *
+     * Sadece article'a bağlı kalmıyoruz.
+     * Çünkü sitenin farklı listelerinde kart yapısı değişebiliyor.
+     */
     private fun parseResults(
         document: Document
     ): List<SearchResponse> {
-        val selector: String =
-            "article," +
-                ".movie-box," +
-                ".movie-item," +
-                ".film-box," +
-                ".film-item," +
-                ".card," +
-                ".poster"
 
-        val elements: Elements = document.select(selector)
+        val results = mutableListOf<SearchResponse>()
 
-        val results: MutableList<SearchResponse> =
-            mutableListOf()
+        val links = document.select(
+            "a[href]"
+        )
 
-        for (element: Element in elements) {
-            val result: SearchResponse? =
-                element.toSearchResult()
+        for (link in links) {
 
-            if (result != null) {
-                results.add(result)
+            try {
+
+                val url = normalizeUrl(
+                    link.attr("href")
+                )
+
+                if (!isValidContentUrl(url)) {
+                    continue
+                }
+
+                val result = link.toSearchResult()
+
+                if (result != null) {
+                    results.add(result)
+                }
+
+            } catch (_: Exception) {
+                // Bozuk tek bir kart bütün listeyi bozmasın.
             }
         }
 
-        return results.distinctBy { result: SearchResponse ->
-            result.url
-        }
+        return results
+            .distinctBy { it.url }
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val linkElement: Element? =
-            if (tagName() == "a") {
-                this
-            } else {
-                findElement(this, "a[href]")
-            }
 
-        if (linkElement == null) {
-            return null
-        }
-
-        val contentUrl: String =
-            normalizeUrl(linkElement.attr("href"))
+        val contentUrl = normalizeUrl(
+            attr("href")
+        )
 
         if (!isValidContentUrl(contentUrl)) {
             return null
         }
 
-        val imageElement: Element? =
-            findElement(this, "img")
+        /*
+         * Menü, kategori ve footer linklerini filtrelemek için
+         * linkin kendisinden ve parent elementlerinden başlık arıyoruz.
+         */
+        val parent = parent()
 
-        val title: String? = firstNonBlank(
-            findElement(this, "h1")?.text(),
-            findElement(this, "h2")?.text(),
-            findElement(this, "h3")?.text(),
-            findElement(this, ".title")?.text(),
-            findElement(this, ".film-title")?.text(),
-            findElement(this, ".movie-title")?.text(),
-            linkElement.attr("title"),
-            imageElement?.attr("alt")
+        val container = parent ?: this
+
+        val image = container.select(
+            "img"
+        ).firstOrNull()
+
+        val title = firstNonBlank(
+            attr("title"),
+            attr("aria-label"),
+            container.select("h1").firstOrNull()?.text(),
+            container.select("h2").firstOrNull()?.text(),
+            container.select("h3").firstOrNull()?.text(),
+            container.select(".title").firstOrNull()?.text(),
+            container.select(".film-title").firstOrNull()?.text(),
+            container.select(".movie-title").firstOrNull()?.text(),
+            text(),
+            image?.attr("alt")
         )?.trim()
 
         if (title.isNullOrBlank()) {
             return null
         }
 
-        val posterUrl: String? =
-            imageElement?.let { image: Element ->
-                val rawPoster: String? = firstNonBlank(
-                    image.attr("data-src"),
-                    image.attr("data-lazy-src"),
-                    image.attr("data-original"),
-                    image.attr("src")
-                )
+        /*
+         * Çok kısa menü linklerini yanlışlıkla film olarak
+         * almamak için minimum uzunluk kontrolü.
+         */
+        if (title.length < 2) {
+            return null
+        }
 
-                if (rawPoster.isNullOrBlank()) {
-                    null
-                } else {
-                    normalizeUrl(rawPoster)
-                }
+        val posterUrl = image?.let {
+
+            val raw = firstNonBlank(
+                it.attr("data-src"),
+                it.attr("data-lazy-src"),
+                it.attr("data-original"),
+                it.attr("src")
+            )
+
+            raw?.let {
+                normalizeUrl(it)
             }
+        }
 
-        val type: TvType =
+        val type =
             if (isSeriesUrl(contentUrl)) {
                 TvType.TvSeries
             } else {
@@ -202,69 +270,63 @@ class HdFilmCehennemiProvider : MainAPI() {
             contentUrl,
             type
         ) {
-         this.posterUrl = posterUrl
+            this.posterUrl = posterUrl
         }
     }
+
     override suspend fun load(
         url: String
     ): LoadResponse {
-        val pageUrl: String = normalizeUrl(url)
+
+        val pageUrl = normalizeUrl(url)
 
         return try {
-            val document: Document = app.get(
+
+            val document = app.get(
                 pageUrl,
-                headers = headers
+                headers = defaultHeaders
             ).document
 
-            val title: String = firstNonBlank(
-                findElement(document, "h1")?.text(),
-                findElement(document, "h2")?.text(),
-                findElement(document, "meta[property=og:title]")
+            val title = firstNonBlank(
+                document.select("h1").firstOrNull()?.text(),
+                document.select("h2").firstOrNull()?.text(),
+                document.select("meta[property=og:title]")
+                    .firstOrNull()
                     ?.attr("content"),
                 document.title()
             )?.trim() ?: "Bilinmeyen içerik"
 
-            val posterElement: Element? = findElement(
-                document,
-                "meta[property=og:image]," +
-                    "div.poster img," +
-                    ".poster img," +
-                    ".movie-poster img," +
-                    "article img"
-            )
+            val poster = findPoster(document)
 
-            val poster: String? =
-                if (posterElement == null) {
-                    null
-                } else {
-                    val rawPoster: String? = firstNonBlank(
-                        posterElement.attr("content"),
-                        posterElement.attr("data-src"),
-                        posterElement.attr("data-lazy-src"),
-                        posterElement.attr("src")
-                    )
-
-                    if (rawPoster.isNullOrBlank()) {
-                        null
-                    } else {
-                        normalizeUrl(rawPoster)
-                    }
-                }
-
-            val plot: String? = firstNonBlank(
-                findElement(document, "meta[name=description]")
+            val plot = firstNonBlank(
+                document.select("meta[name=description]")
+                    .firstOrNull()
                     ?.attr("content"),
-                findElement(document, "meta[property=og:description]")
+
+                document.select("meta[property=og:description]")
+                    .firstOrNull()
                     ?.attr("content"),
-                findElement(document, ".description")?.text(),
-                findElement(document, ".overview")?.text(),
-                findElement(document, ".story")?.text(),
-                findElement(document, ".post-content")?.text()
+
+                document.select(".description")
+                    .firstOrNull()
+                    ?.text(),
+
+                document.select(".overview")
+                    .firstOrNull()
+                    ?.text(),
+
+                document.select(".story")
+                    .firstOrNull()
+                    ?.text(),
+
+                document.select(".post-content")
+                    .firstOrNull()
+                    ?.text()
             )?.trim()
 
             if (isSeriesUrl(pageUrl)) {
-                val episodes: List<Episode> =
-                    parseEpisodes(document)
+
+                val episodes = parseEpisodes(document)
 
                 newTvSeriesLoadResponse(
                     title,
@@ -272,10 +334,12 @@ class HdFilmCehennemiProvider : MainAPI() {
                     TvType.TvSeries,
                     episodes
                 ) {
-                this.posterUrl = poster
+                    this.posterUrl = poster
                     this.plot = plot
                 }
+
             } else {
+
                 newMovieLoadResponse(
                     title,
                     pageUrl,
@@ -286,8 +350,13 @@ class HdFilmCehennemiProvider : MainAPI() {
                     this.plot = plot
                 }
             }
-        } catch (error: Exception) {
-            logError("Detay sayfası yüklenemedi: $pageUrl", error)
+
+        } catch (e: Exception) {
+
+            logError(
+                "Detay sayfası yüklenemedi: $pageUrl",
+                e
+            )
 
             newMovieLoadResponse(
                 "İçerik yüklenemedi",
@@ -298,160 +367,302 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
+    private fun findPoster(
+        document: Document
+    ): String? {
+
+        val element = document.select(
+            "meta[property=og:image]," +
+                "meta[name=twitter:image]," +
+                ".poster img," +
+                ".movie-poster img," +
+                ".film-poster img," +
+                "article img"
+        ).firstOrNull()
+
+        if (element == null) {
+            return null
+        }
+
+        val raw = firstNonBlank(
+            element.attr("content"),
+            element.attr("data-src"),
+            element.attr("data-lazy-src"),
+            element.attr("data-original"),
+            element.attr("src")
+        )
+
+        return raw?.let {
+            normalizeUrl(it)
+        }
+    }
+
+    /**
+     * Dizi bölümlerini bul.
+     */
     private fun parseEpisodes(
         document: Document
     ): List<Episode> {
-        val selector: String =
+
+        val episodes = mutableListOf<Episode>()
+
+        val elements = document.select(
             ".episode-list a[href]," +
                 ".episodes a[href]," +
-                "ul.episodes a[href]," +
+                ".episode a[href]," +
                 ".season-list a[href]," +
                 ".seasons-list a[href]," +
-                "a[href*='/bolum']," +
+                "a[href*='/bolum-']," +
+                "a[href*='/bolum/']," +
                 "a[href*='-bolum-']"
+        )
 
-        val elements: Elements =
-            document.select(selector)
+        for (element in elements) {
 
-        val episodes: MutableList<Episode> =
-            mutableListOf()
-
-        for (element: Element in elements) {
-            val episodeUrl: String =
-                normalizeUrl(element.attr("href"))
+            val episodeUrl = normalizeUrl(
+                element.attr("href")
+            )
 
             if (!isValidContentUrl(episodeUrl)) {
                 continue
             }
 
-            val episodeName: String? = firstNonBlank(
+            val name = firstNonBlank(
                 element.text(),
                 element.attr("title"),
                 element.attr("aria-label")
             )?.trim()
 
-            if (episodeName.isNullOrBlank()) {
+            if (name.isNullOrBlank()) {
                 continue
             }
 
             episodes.add(
                 newEpisode(episodeUrl) {
-                    name = episodeName
+                    this.name = name
                 }
             )
         }
 
-        return episodes.distinctBy { episode: Episode ->
-            episode.data
-        }
+        return episodes
+            .distinctBy { it.data }
     }
 
+    /**
+     * Video kaynaklarını yükle.
+     *
+     * Burada HDFilmCehennemi sayfasındaki player/iframe
+     * URL'lerini bulup CloudStream extractor sistemine veriyoruz.
+     */
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val pageUrl: String =
-            normalizeUrl(data)
 
-        val candidateUrls: MutableSet<String> =
-            linkedSetOf()
+        val pageUrl = normalizeUrl(data)
 
-        var found: Boolean = false
+        val candidates = linkedSetOf<String>()
 
         try {
-            val document: Document = app.get(
+
+            val document = app.get(
                 pageUrl,
-                headers = headers
+                headers = defaultHeaders
             ).document
-            val iframeElements: Elements = document.select(
-                "div.video-container iframe," +
-                    ".hdmv-play-container iframe," +
-                    ".play-that-video iframe," +
-                    "iframe[src]," +
-                    "iframe[data-src]"
+
+            /*
+             * Iframe/player kaynakları.
+             */
+            val iframeElements = document.select(
+                "iframe[src]," +
+                    "iframe[data-src]," +
+                    "iframe[data-url]," +
+                    "iframe[data-embed]," +
+                    "iframe[data-player]," +
+                    "[data-iframe]," +
+                    "[data-video]"
             )
 
-            for (iframe: Element in iframeElements) {
+            for (element in iframeElements) {
+
                 addCandidate(
-                    candidateUrls,
-                    iframe.attr("src")
+                    candidates,
+                    element.attr("src")
                 )
 
                 addCandidate(
-                    candidateUrls,
-                    iframe.attr("data-src")
-                )
-            }
-
-            val sourceElements: Elements = document.select(
-                "video source[src]," +
-                    "video[src]," +
-                    "source[src]"
-            )
-
-            for (source: Element in sourceElements) {
-                addCandidate(
-                    candidateUrls,
-                    source.attr("src")
-                )
-            }
-
-            val dataElements: Elements = document.select(
-                "[data-video]," +
-                    "[data-player]," +
-                    "[data-stream]," +
-                    "[data-file]"
-            )
-
-            for (element: Element in dataElements) {
-                addCandidate(
-                    candidateUrls,
-                    element.attr("data-video")
+                    candidates,
+                    element.attr("data-src")
                 )
 
                 addCandidate(
-                    candidateUrls,
+                    candidates,
+                    element.attr("data-url")
+                )
+
+                addCandidate(
+                    candidates,
+                    element.attr("data-embed")
+                )
+
+                addCandidate(
+                    candidates,
                     element.attr("data-player")
                 )
 
                 addCandidate(
-                    candidateUrls,
-                    element.attr("data-stream")
+                    candidates,
+                    element.attr("data-iframe")
                 )
 
                 addCandidate(
-                    candidateUrls,
-                    element.attr("data-file")
+                    candidates,
+                    element.attr("data-video")
                 )
             }
 
-            for (candidate: String in candidateUrls) {
-                try {
-                    val extractorFound: Boolean =
-                        loadExtractor(
-                            candidate,
-                            pageUrl,
-                            subtitleCallback,
-                            callback
-                        )
+            /*
+             * HTML5 video kaynakları.
+             */
+            val mediaElements = document.select(
+                "video[src]," +
+                    "video source[src]," +
+                    "source[src]"
+            )
 
-                    if (extractorFound) {
-                        found = true
-                    }
-                } catch (error: Exception) {
-                    logError(
-                        "Extractor başarısız: $candidate",
-                        error
+            for (element in mediaElements) {
+
+                addCandidate(
+                    candidates,
+                    element.attr("src")
+                )
+            }
+
+            /*
+             * Sayfanın JS'i içinde açıkça geçen player URL'leri.
+             *
+             * Burada sadece normal URL'leri yakalıyoruz.
+             * Token/DRM/koruma aşma işlemi yapmıyoruz.
+             */
+            val html = document.html()
+
+            val urlRegex = Regex(
+                """https?://[^\s"'<>\\]+"""
+            )
+
+            for (match in urlRegex.findAll(html)) {
+
+                val candidate = match.value
+                    .replace("\\/", "/")
+                    .trimEnd(
+                        ')',
+                        ',',
+                        ';'
+                    )
+
+                val lower = candidate.lowercase()
+
+                if (
+                    lower.contains("rapidrame") ||
+                    lower.contains("vidmoly") ||
+                    lower.contains("vidrame") ||
+                    lower.endsWith(".m3u8") ||
+                    lower.endsWith(".mp4") ||
+                    lower.endsWith(".mpd")
+                ) {
+                    addCandidate(
+                        candidates,
+                        candidate
                     )
                 }
             }
-        } catch (error: Exception) {
+
+        } catch (e: Exception) {
+
             logError(
-                "Video kaynakları yüklenemedi: $pageUrl",
-                error
+                "Video sayfası okunamadı: $pageUrl",
+                e
             )
+
+            return false
+        }
+
+        if (candidates.isEmpty()) {
+            logError(
+                "Video kaynağı bulunamadı: $pageUrl",
+                IllegalStateException("No candidate URLs")
+            )
+
+            return false
+        }
+
+        var found = false
+
+        for (candidate in candidates) {
+
+            try {
+
+                val lower = candidate.lowercase()
+
+                /*
+                 * Doğrudan medya URL'si.
+                 *
+                 * CloudStream URL'den M3U8/DASH/VIDEO tipini
+                 * otomatik algılayabilir.
+                 */
+                if (
+                    lower.contains(".m3u8") ||
+                    lower.contains(".mp4") ||
+                    lower.contains(".mpd")
+                ) {
+
+                    val link = newExtractorLink(
+                        source = "HDFilmCehennemi",
+                        name = "HDFilmCehennemi",
+                        url = candidate
+                    ) {
+
+                        referer = pageUrl
+
+                        headers = mapOf(
+                            "User-Agent" to userAgent,
+                            "Referer" to pageUrl
+                        )
+
+                        quality = Qualities.Unknown.value
+                    }
+
+                    callback(link)
+
+                    found = true
+
+                    continue
+                }
+
+                /*
+                 * Rapidrame / Vidmoly / diğer CloudStream
+                 * extractor'larına bırak.
+                 */
+                val extractorFound = loadExtractor(
+                    candidate,
+                    pageUrl,
+                    subtitleCallback,
+                    callback
+                )
+
+                if (extractorFound) {
+                    found = true
+                }
+
+            } catch (e: Exception) {
+
+                logError(
+                    "Extractor başarısız: $candidate",
+                    e
+                )
+            }
         }
 
         return found
@@ -461,12 +672,22 @@ class HdFilmCehennemiProvider : MainAPI() {
         candidates: MutableSet<String>,
         rawUrl: String?
     ) {
+
         if (rawUrl.isNullOrBlank()) {
             return
         }
 
-        val url: String =
-            normalizeUrl(rawUrl)
+        val cleaned = rawUrl
+            .trim()
+            .removeSurrounding("\"")
+            .removeSurrounding("'")
+            .replace("\\/", "/")
+
+        if (cleaned.isBlank()) {
+            return
+        }
+
+        val url = normalizeUrl(cleaned)
 
         if (
             url.startsWith("http://") ||
@@ -476,37 +697,23 @@ class HdFilmCehennemiProvider : MainAPI() {
         }
     }
 
-    private fun findElement(
-        document: Document,
-        selector: String
-    ): Element? {
-        val elements: Elements =
-            document.select(selector)
-
-        return elements.firstOrNull()
-    }
-
-    private fun findElement(
-        element: Element,
-        selector: String
-    ): Element? {
-        val elements: Elements =
-            element.select(selector)
-
-        return elements.firstOrNull()
-    }
-
+    /**
+     * URL'yi güvenli şekilde absolute URL'ye çevir.
+     */
     private fun normalizeUrl(
         rawUrl: String?
     ): String {
+
         if (rawUrl.isNullOrBlank()) {
             return ""
         }
 
-        val value: String =
-            rawUrl.trim()
+        val value = rawUrl
+            .trim()
+            .replace("\\/", "/")
 
         return when {
+
             value.startsWith("//") ->
                 "https:$value"
 
@@ -525,36 +732,59 @@ class HdFilmCehennemiProvider : MainAPI() {
     private fun isSeriesUrl(
         url: String
     ): Boolean {
-        return url.contains("/dizi/") ||
-            url.contains("/series/") ||
-            url.contains("/tv/")
+
+        val lower = url.lowercase()
+
+        return lower.contains("/dizi/") ||
+            lower.contains("/series/") ||
+            lower.contains("/tv/") ||
+            lower.contains("/sezon-")
     }
 
     private fun isValidContentUrl(
         url: String
     ): Boolean {
+
         if (url.isBlank()) {
             return false
         }
 
-        if (
-            url == mainUrl ||
-            url == "$mainUrl/" ||
-            url.contains("/kategori/") ||
-            url.contains("/category/") ||
-            url.contains("/imdb/") ||
-            url.contains("/sayfa/") ||
-            url.contains("/page/")
-        ) {
+        if (!url.startsWith("$mainUrl/")) {
             return false
         }
 
-        return url.startsWith("$mainUrl/")
+        val lower = url.lowercase()
+
+        /*
+         * Site navigasyon linklerini sonuç listesinden çıkar.
+         */
+        val ignored = listOf(
+            "/category/",
+            "/kategori/",
+            "/tur/",
+            "/imdb/",
+            "/sayfa/",
+            "/page/",
+            "/iletisim/",
+            "/yardim/",
+            "/login/",
+            "/register/",
+            "/uye/",
+            "/etiket/",
+            "/tag/"
+        )
+
+        if (ignored.any { lower.contains(it) }) {
+            return false
+        }
+
+        return true
     }
 
     private fun firstNonBlank(
         vararg values: String?
     ): String? {
+
         return values.firstOrNull {
             !it.isNullOrBlank()
         }
@@ -564,6 +794,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         message: String,
         error: Throwable
     ) {
+
         println(
             "HDFilmCehennemi: $message | " +
                 "${error::class.simpleName}: ${error.message}"

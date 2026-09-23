@@ -14,7 +14,6 @@ class HdFilmCehennemiProvider : MainAPI() {
     override var lang = "tr"
 
     override val hasMainPage = true
-
     override val supportedTypes = setOf(
         TvType.Movie,
         TvType.TvSeries
@@ -152,8 +151,7 @@ class HdFilmCehennemiProvider : MainAPI() {
         document: Document
     ): List<SearchResponse> {
 
-        val results:
-            MutableList<SearchResponse> =
+        val results: MutableList<SearchResponse> =
             mutableListOf()
 
         val posterElements: Elements =
@@ -163,8 +161,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
         for (element: Element in posterElements) {
 
-            val result:
-                SearchResponse? =
+            val result: SearchResponse? =
                 element.toSearchResult()
 
             if (result != null) {
@@ -187,13 +184,9 @@ class HdFilmCehennemiProvider : MainAPI() {
                     fallbackSelector
                 )
 
-            for (
-                element: Element
-                in fallbackElements
-            ) {
+            for (element: Element in fallbackElements) {
 
-                val result:
-                    SearchResponse? =
+                val result: SearchResponse? =
                     element.toSearchResult()
 
                 if (result != null) {
@@ -513,7 +506,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
     /*
      * ============================================================
-     * DİNAMİK RAPIDRAME LOADLINKS
+     * DİNAMİK RAPIDRAME
      * ============================================================
      */
 
@@ -524,83 +517,54 @@ class HdFilmCehennemiProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
 
-        val pageUrl =
-            normalizeUrl(data)
-
         return try {
 
+            val pageUrl =
+                normalizeUrl(data)
+
             /*
-             * Film detay sayfasını al.
+             * Film sayfası
              */
-            val pageResponse =
+            val pageDocument =
                 app.get(
                     pageUrl,
                     headers = headers
-                )
-
-            val pageDocument =
-                pageResponse.document
+                ).document
 
             /*
-             * Sayfadaki iframe'i bul.
-             *
-             * Önce src,
-             * yoksa data-src.
+             * Sayfadaki iframe
              */
-            val iframeElement =
+            val iframe =
                 pageDocument
                     .select("iframe")
                     .firstOrNull()
 
-            if (iframeElement == null) {
-
-                logError(
-                    "Video iframe bulunamadı: $pageUrl",
-                    IllegalStateException(
-                        "iframe yok"
-                    )
-                )
-
-                return false
-            }
-
             val iframeSrc =
                 firstNonBlank(
-                    iframeElement.attr("src"),
-                    iframeElement.attr("data-src")
+                    iframe?.attr("src"),
+                    iframe?.attr("data-src")
                 )
 
             if (iframeSrc.isNullOrBlank()) {
 
-                logError(
-                    "Iframe URL boş: $pageUrl",
-                    IllegalStateException(
-                        "iframe src boş"
-                    )
+                println(
+                    "HDFilmCehennemi: iframe bulunamadı -> $pageUrl"
                 )
 
                 return false
             }
 
-            val normalizedIframeUrl =
+            val primaryIframe =
                 normalizeUrl(
                     iframeSrc
                 )
 
             /*
-             * alternative-link kaynaklarını topla.
-             *
-             * Örnek:
-             *
-             * <button
-             *   class="alternative-link"
-             *   data-video="322665">
-             *   Rapidrame
-             * </button>
+             * Alternatif kaynaklar
              */
             data class AlternativeSource(
                 val name: String,
-                val videoId: String,
+                val videoId: String?,
                 val active: Boolean
             )
 
@@ -609,87 +573,75 @@ class HdFilmCehennemiProvider : MainAPI() {
                     .select(
                         ".alternative-link"
                     )
-                    .mapNotNull { element ->
+                    .map { element ->
 
-                        val sourceName =
-                            element.text()
-                                .trim()
+                        AlternativeSource(
+                            name =
+                                element
+                                    .text()
+                                    .trim(),
 
-                        val videoId =
-                            element
-                                .attr("data-video")
-                                .trim()
+                            videoId =
+                                element
+                                    .attr("data-video")
+                                    .trim()
+                                    .ifBlank {
+                                        null
+                                    },
 
-                        val active =
-                            element
-                                .attr("data-active")
-                                .trim() == "1"
-
-                        if (
-                            videoId.isNotBlank()
-                        ) {
-                            AlternativeSource(
-                                name = sourceName,
-                                videoId = videoId,
-                                active = active
-                            )
-                        } else {
-                            null
-                        }
+                            active =
+                                element
+                                    .attr("data-active")
+                                    .trim() == "1"
+                        )
                     }
 
             /*
              * ====================================================
-             * Yardımcı fonksiyonlar
+             * ROT13
              * ====================================================
              */
-
             fun rot13(
                 value: String
             ): String {
 
-                return buildString {
+                return value.map { c ->
 
-                    for (character in value) {
+                    when {
 
-                        when {
-
-                            character in 'a'..'z' -> {
-
-                                append(
-                                    (
-                                        (
-                                            character.code -
-                                                'a'.code +
-                                                13
-                                            ) % 26 +
-                                            'a'.code
-                                        ).toChar()
-                                )
-                            }
-
-                            character in 'A'..'Z' -> {
-
-                                append(
-                                    (
-                                        (
-                                            character.code -
-                                                'A'.code +
-                                                13
-                                            ) % 26 +
-                                            'A'.code
-                                        ).toChar()
-                                )
-                            }
-
-                            else -> {
-                                append(character)
-                            }
+                        c in 'a'..'z' -> {
+                            (
+                                (
+                                    c.code -
+                                        'a'.code +
+                                        13
+                                    ) % 26 +
+                                    'a'.code
+                                ).toChar()
                         }
+
+                        c in 'A'..'Z' -> {
+                            (
+                                (
+                                    c.code -
+                                        'A'.code +
+                                        13
+                                    ) % 26 +
+                                    'A'.code
+                                ).toChar()
+                        }
+
+                        else -> c
                     }
-                }
+
+                }.joinToString("")
             }
 
+            /*
+             * ====================================================
+             * Character Unmix
+             * ====================================================
+             */
             fun characterUnmix(
                 value: String
             ): String {
@@ -701,10 +653,10 @@ class HdFilmCehennemiProvider : MainAPI() {
                     i in value.indices
                 ) {
 
-                    val charCode =
+                    var charCode =
                         value[i].code
 
-                    val mixed =
+                    charCode =
                         (
                             charCode -
                                 (
@@ -715,28 +667,38 @@ class HdFilmCehennemiProvider : MainAPI() {
                             ) % 256
 
                     output.append(
-                        mixed.toInt().toChar()
+                        charCode.toChar()
                     )
                 }
 
                 return output.toString()
             }
 
+            /*
+             * ====================================================
+             * Base64
+             * ====================================================
+             */
             fun base64Decode(
                 value: String
             ): String {
 
-                val decoded =
+                val bytes =
                     android.util.Base64.decode(
                         value,
                         android.util.Base64.DEFAULT
                     )
 
-                return decoded.toString(
+                return bytes.toString(
                     Charsets.ISO_8859_1
                 )
             }
 
+            /*
+             * ====================================================
+             * Video URL kontrolü
+             * ====================================================
+             */
             fun isValidVideoUrl(
                 url: String?
             ): Boolean {
@@ -745,20 +707,17 @@ class HdFilmCehennemiProvider : MainAPI() {
                     return false
                 }
 
-                val value =
-                    url.trim()
-
-                return value.startsWith(
+                return url.startsWith(
                     "https://"
                 ) &&
                     (
-                        value.contains(
+                        url.contains(
                             ".m3u8"
                         ) ||
-                            value.contains(
+                            url.contains(
                                 "/hls/"
                             ) ||
-                            value.contains(
+                            url.contains(
                                 ".mp4"
                             )
                         )
@@ -766,11 +725,13 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * JavaScript Packer
-             * ====================================================
+             * JS PACKER
              *
-             * Stremio scraper'daki unpackJS
-             * algoritmasının Kotlin karşılığı.
+             * Kaynak scraper'daki unpackJS:
+             *
+             * k = k.split('|')
+             * p.replace(/\b\w+\b/g, decode)
+             * ====================================================
              */
             fun unpackJs(
                 packedCode: String,
@@ -778,14 +739,15 @@ class HdFilmCehennemiProvider : MainAPI() {
                 keywords: String
             ): String {
 
-                val keywordList =
+                val dictionary =
                     keywords.split("|")
 
-                fun decode(
+                fun decodeWord(
                     word: String
                 ): String {
 
-                    var number = 0
+                    var number =
+                        0
 
                     for (
                         character in word
@@ -793,48 +755,45 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                         when {
 
-                            character in '0'..'9' -> {
+                            character.isDigit() -> {
 
                                 number =
                                     number * base +
-                                        (
-                                            character.code -
-                                                '0'.code
-                                            )
+                                        character
+                                            .digitToInt()
                             }
 
                             character in 'a'..'z' -> {
 
                                 number =
                                     number * base +
-                                        (
-                                            character.code -
-                                                'a'.code +
-                                                10
-                                            )
+                                        character.code -
+                                        'a'.code +
+                                        10
                             }
 
                             character in 'A'..'Z' -> {
 
                                 number =
                                     number * base +
-                                        (
-                                            character.code -
-                                                'A'.code +
-                                                36
-                                            )
+                                        character.code -
+                                        'A'.code +
+                                        36
                             }
                         }
                     }
 
                     return if (
                         number >= 0 &&
-                        number < keywordList.size &&
-                        keywordList[number]
+                        number < dictionary.size &&
+                        dictionary[number]
                             .isNotEmpty()
                     ) {
-                        keywordList[number]
+
+                        dictionary[number]
+
                     } else {
+
                         word
                     }
                 }
@@ -845,7 +804,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                     packedCode
                 ) { match ->
 
-                    decode(
+                    decodeWord(
                         match.value
                     )
                 }
@@ -853,200 +812,179 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * Video URL Decoder
+             * Variant 1
+             *
+             * reverse
+             * -> ROT13
+             * -> Base64
+             * -> unmix
              * ====================================================
              */
-
             fun decodeVariant1(
-                value: String
-            ): String? {
+                reversed: String
+            ): String {
 
-                return try {
+                var value =
+                    rot13(
+                        reversed
+                    )
 
-                    /*
-                     * join
-                     * ↓
-                     * reverse
-                     * ↓
-                     * ROT13
-                     * ↓
-                     * Base64
-                     * ↓
-                     * unmix
-                     */
-                    var result =
-                        value.reversed()
+                value =
+                    base64Decode(
+                        value
+                    )
 
-                    result =
-                        rot13(result)
-
-                    result =
-                        base64Decode(result)
-
-                    result =
-                        characterUnmix(result)
-
-                    if (
-                        isValidVideoUrl(
-                            result
-                        )
-                    ) {
-                        result.trim()
-                    } else {
-                        null
-                    }
-
-                } catch (
-                    error: Exception
-                ) {
-
-                    null
-                }
+                return characterUnmix(
+                    value
+                )
             }
 
+            /*
+             * ====================================================
+             * Variant 2
+             *
+             * reverse
+             * -> Base64
+             * -> ROT13
+             * -> unmix
+             * ====================================================
+             */
             fun decodeVariant2(
-                value: String
-            ): String? {
+                reversed: String
+            ): String {
 
-                return try {
+                var value =
+                    base64Decode(
+                        reversed
+                    )
 
-                    /*
-                     * join
-                     * ↓
-                     * reverse
-                     * ↓
-                     * Base64
-                     * ↓
-                     * ROT13
-                     * ↓
-                     * unmix
-                     */
-                    var result =
-                        value.reversed()
+                value =
+                    rot13(
+                        value
+                    )
 
-                    result =
-                        base64Decode(result)
-
-                    result =
-                        rot13(result)
-
-                    result =
-                        characterUnmix(result)
-
-                    if (
-                        isValidVideoUrl(
-                            result
-                        )
-                    ) {
-                        result.trim()
-                    } else {
-                        null
-                    }
-
-                } catch (
-                    error: Exception
-                ) {
-
-                    null
-                }
+                return characterUnmix(
+                    value
+                )
             }
 
+            /*
+             * ====================================================
+             * Variant 3
+             *
+             * Base64
+             * -> reverse
+             * -> ROT13
+             * -> unmix
+             *
+             * Güncel yöntem
+             * ====================================================
+             */
             fun decodeVariant3(
                 value: String
-            ): String? {
+            ): String {
 
-                return try {
+                var result =
+                    base64Decode(
+                        value
+                    )
 
-                    /*
-                     * Güncel algoritma:
-                     *
-                     * join
-                     * ↓
-                     * Base64
-                     * ↓
-                     * reverse
-                     * ↓
-                     * ROT13
-                     * ↓
-                     * unmix
-                     */
-                    var result =
-                        base64Decode(value)
+                result =
+                    result
+                        .reversed()
 
-                    result =
-                        result.reversed()
+                result =
+                    rot13(
+                        result
+                    )
 
-                    result =
-                        rot13(result)
-
-                    result =
-                        characterUnmix(result)
-
-                    if (
-                        isValidVideoUrl(
-                            result
-                        )
-                    ) {
-                        result.trim()
-                    } else {
-                        null
-                    }
-
-                } catch (
-                    error: Exception
-                ) {
-
-                    null
-                }
+                return characterUnmix(
+                    result
+                )
             }
 
+            /*
+             * ====================================================
+             * Video URL decode
+             * ====================================================
+             */
             fun decodeVideoUrl(
                 parts: List<String>
             ): String? {
 
-                val joined =
+                val value =
                     parts.joinToString("")
 
-                /*
-                 * Güncel algoritmayı önce dene.
-                 */
-                val variant3 =
-                    decodeVariant3(
-                        joined
-                    )
+                val reversed =
+                    value.reversed()
 
-                if (
-                    variant3 != null
+                /*
+                 * Variant 3 önce
+                 */
+                try {
+
+                    val result3 =
+                        decodeVariant3(
+                            value
+                        )
+
+                    if (
+                        isValidVideoUrl(
+                            result3
+                        )
+                    ) {
+                        return result3
+                    }
+
+                } catch (
+                    ignored: Exception
                 ) {
-                    return variant3
                 }
 
                 /*
-                 * Eski varyant 1.
+                 * Variant 1
                  */
-                val variant1 =
-                    decodeVariant1(
-                        joined
-                    )
+                try {
 
-                if (
-                    variant1 != null
+                    val result1 =
+                        decodeVariant1(
+                            reversed
+                        )
+
+                    if (
+                        isValidVideoUrl(
+                            result1
+                        )
+                    ) {
+                        return result1
+                    }
+
+                } catch (
+                    ignored: Exception
                 ) {
-                    return variant1
                 }
 
                 /*
-                 * Eski varyant 2.
+                 * Variant 2
                  */
-                val variant2 =
-                    decodeVariant2(
-                        joined
-                    )
+                try {
 
-                if (
-                    variant2 != null
+                    val result2 =
+                        decodeVariant2(
+                            reversed
+                        )
+
+                    if (
+                        isValidVideoUrl(
+                            result2
+                        )
+                    ) {
+                        return result2
+                    }
+
+                } catch (
+                    ignored: Exception
                 ) {
-                    return variant2
                 }
 
                 return null
@@ -1054,15 +992,19 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * iframe çözme fonksiyonu
+             * IFRAME SCRAPER
+             * ====================================================
+             *
+             * Güncel scraper'daki önemli nokta:
+             *
+             * iframe isteğinin Referer'ı BASE_URL oluyor.
              * ====================================================
              */
-
             suspend fun scrapeIframe(
                 iframeUrl: String
             ): Pair<String, String>? {
 
-                try {
+                return try {
 
                     val iframeResponse =
                         app.get(
@@ -1074,26 +1016,33 @@ class HdFilmCehennemiProvider : MainAPI() {
                                     "application/xml;q=0.9,*/*;q=0.8",
                                 "Accept-Language" to
                                     "tr-TR,tr;q=0.9,en;q=0.8",
-                                "Referer" to pageUrl
+
+                                /*
+                                 * Güncel scraper:
+                                 *
+                                 * httpGet(iframeSrc, BASE_URL)
+                                 *
+                                 * Yani iframe isteğinin referer'ı
+                                 * hdfilmcehennemi.ws.
+                                 */
+                                "Referer" to
+                                    "https://www.hdfilmcehennemi.ws/"
                             )
                         )
 
                     val html =
                         iframeResponse.text
 
-                    if (html.isBlank()) {
+                    if (
+                        html.isBlank()
+                    ) {
                         return null
                     }
 
                     /*
                      * =================================================
-                     * Packed JS bul
+                     * Packed JS
                      * =================================================
-                     *
-                     * Kaynaktaki regex'in Kotlin karşılığı:
-                     *
-                     * eval(function(p,a,c,k,e,d){...}
-                     * ('...',62,...,'...')
                      */
                     val packedRegex =
                         Regex(
@@ -1108,10 +1057,13 @@ class HdFilmCehennemiProvider : MainAPI() {
                             html
                         )
 
-                    if (packedMatch != null) {
+                    if (
+                        packedMatch != null
+                    ) {
 
                         val packedCode =
-                            packedMatch.groupValues[1]
+                            packedMatch
+                                .groupValues[1]
 
                         val base =
                             packedMatch
@@ -1128,11 +1080,13 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 .groupValues[4]
 
                         /*
-                         * count değeri JS packer'dan geliyor.
-                         * unpack işleminin kendisi keyword listesine
-                         * göre çalışıyor.
+                         * count JS packer'ın parçası.
+                         * unpackJS mantığı dictionary üzerinden
+                         * çalıştığı için burada ayrıca kullanılmıyor.
                          */
-                        @Suppress("UNUSED_VARIABLE")
+                        @Suppress(
+                            "UNUSED_VARIABLE"
+                        )
                         val unusedCount =
                             count
 
@@ -1144,40 +1098,33 @@ class HdFilmCehennemiProvider : MainAPI() {
                             )
 
                         /*
-                         * dc_xxx([
-                         *   "...",
-                         *   "...",
-                         *   "..."
-                         * ])
+                         * dc_xxx([...])
                          */
-                        val partsRegex =
+                        val partsMatch =
                             Regex(
                                 """dc_\w+\(\[([^\]]+)\]\)"""
-                            )
-
-                        val partsMatch =
-                            partsRegex.find(
+                            ).find(
                                 decodedJs
                             )
 
-                        if (partsMatch != null) {
+                        if (
+                            partsMatch != null
+                        ) {
 
                             val arrayContent =
                                 partsMatch
                                     .groupValues[1]
 
                             /*
-                             * Stremio scraper'daki:
+                             * Kaynak scraper:
                              *
-                             * /"([^"]+)"/g
+                             * partsMatch[1]
+                             * .match(/"([^"]+)"/g)
                              */
-                            val stringRegex =
+                            val parts =
                                 Regex(
                                     """"([^"]+)""""
                                 )
-
-                            val parts =
-                                stringRegex
                                     .findAll(
                                         arrayContent
                                     )
@@ -1199,6 +1146,11 @@ class HdFilmCehennemiProvider : MainAPI() {
                                     videoUrl != null
                                 ) {
 
+                                    /*
+                                     * Çalışan iframe'in origin'i.
+                                     *
+                                     * Rapidrame'de kritik.
+                                     */
                                     val uri =
                                         java.net.URI(
                                             iframeUrl
@@ -1206,12 +1158,14 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                                     val origin =
                                         if (
-                                            !uri.scheme.isNullOrBlank() &&
-                                            !uri.host.isNullOrBlank()
+                                            !uri.scheme
+                                                .isNullOrBlank() &&
+                                            !uri.host
+                                                .isNullOrBlank()
                                         ) {
                                             "${uri.scheme}://${uri.host}"
                                         } else {
-                                            "https://hdfilmcehennemi.mobi"
+                                            "https://www.hdfilmcehennemi.ws"
                                         }
 
                                     return Pair(
@@ -1228,25 +1182,23 @@ class HdFilmCehennemiProvider : MainAPI() {
                      * JSON-LD fallback
                      * =================================================
                      */
-                    val jsonLdRegex =
+                    val jsonLdMatch =
                         Regex(
-                            """<script[^>]*type=["']application/ld\+json["'][^>]*>([\s\S]*?)</script>""",
+                            """<script type=["']application/ld\+json["']>([\s\S]*?)</script>""",
                             setOf(
                                 RegexOption.IGNORE_CASE
                             )
-                        )
-
-                    val jsonLdMatch =
-                        jsonLdRegex.find(
+                        ).find(
                             html
                         )
 
-                    if (jsonLdMatch != null) {
+                    if (
+                        jsonLdMatch != null
+                    ) {
 
                         val jsonLd =
                             jsonLdMatch
                                 .groupValues[1]
-                                .trim()
 
                         val contentUrlMatch =
                             Regex(
@@ -1279,12 +1231,14 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                                 val origin =
                                     if (
-                                        !uri.scheme.isNullOrBlank() &&
-                                        !uri.host.isNullOrBlank()
+                                        !uri.scheme
+                                            .isNullOrBlank() &&
+                                        !uri.host
+                                            .isNullOrBlank()
                                     ) {
                                         "${uri.scheme}://${uri.host}"
                                     } else {
-                                        "https://hdfilmcehennemi.mobi"
+                                        "https://www.hdfilmcehennemi.ws"
                                     }
 
                                 return Pair(
@@ -1295,60 +1249,61 @@ class HdFilmCehennemiProvider : MainAPI() {
                         }
                     }
 
-                    return null
+                    null
 
                 } catch (
                     error: Exception
                 ) {
 
-                    logError(
-                        "Iframe çözülemedi: $iframeUrl",
-                        error
+                    println(
+                        "HDFilmCehennemi iframe çözme hatası: " +
+                            "${error::class.simpleName}: " +
+                            error.message
                     )
 
-                    return null
+                    null
                 }
             }
 
             /*
              * ====================================================
-             * 1. Önce ana iframe'i dene
+             * 1. Önce sayfadaki iframe
              * ====================================================
              */
-
-            var result:
-                Pair<String, String>? =
+            var result =
                 scrapeIframe(
-                    normalizedIframeUrl
+                    primaryIframe
                 )
+
+            var usedIframe =
+                primaryIframe
 
             /*
              * ====================================================
-             * 2. Ana iframe başarısızsa alternatifleri dene
+             * 2. Alternatif kaynaklar
              * ====================================================
              *
-             * Örnek:
+             * Güncel scraper:
              *
-             * iframe:
-             * https://hdfilmcehennemi.mobi/video/embed/OSxZYB25jjD4/
+             * if alt.active continue
              *
              * Rapidrame:
-             * https://hdfilmcehennemi.mobi/video/embed/
-             * OSxZYB25jjD4/
-             * ?rapidrame_id=jzkqxar12lb8
+             *
+             * EMBED_BASE/video/embed/{videoId}/
+             * ?rapidrame_id={alt.videoId}
+             * ====================================================
              */
-
-            if (result == null) {
-
-                val videoIdMatch =
-                    Regex(
-                        """/embed/([^/?]+)"""
-                    ).find(
-                        normalizedIframeUrl
-                    )
+            if (
+                result == null
+            ) {
 
                 val videoId =
-                    videoIdMatch
+                    Regex(
+                        """embed/([^/\?]+)"""
+                    )
+                        .find(
+                            primaryIframe
+                        )
                         ?.groupValues
                         ?.getOrNull(1)
 
@@ -1356,60 +1311,61 @@ class HdFilmCehennemiProvider : MainAPI() {
                     !videoId.isNullOrBlank()
                 ) {
 
-                    /*
-                     * Önce inactive alternatifleri,
-                     * özellikle Rapidrame'i deniyoruz.
-                     */
-                    val orderedAlternatives =
-                        alternatives.sortedBy {
-                            alternative ->
-                            if (
-                                alternative.active
-                            ) {
-                                1
-                            } else {
-                                0
-                            }
-                        }
-
                     for (
                         alternative
-                        in orderedAlternatives
+                        in alternatives
                     ) {
 
-                        val alternativeUrl: String
-
+                        /*
+                         * Güncel scraper aktif source'u
+                         * alternatif olarak tekrar denemiyor.
+                         */
                         if (
-                            alternative.name
-                                .equals(
-                                    "Rapidrame",
-                                    ignoreCase = true
-                                )
+                            alternative.active
                         ) {
-
-                            alternativeUrl =
-                                "https://hdfilmcehennemi.mobi" +
-                                    "/video/embed/" +
-                                    "$videoId/" +
-                                    "?rapidrame_id=" +
-                                    alternative.videoId
-
-                        } else {
-
-                            alternativeUrl =
-                                "https://hdfilmcehennemi.mobi" +
-                                    "/video/embed/" +
-                                    "$videoId/"
+                            continue
                         }
 
-                        result =
+                        val alternativeUrl =
+                            if (
+                                alternative.name
+                                    .equals(
+                                        "Rapidrame",
+                                        ignoreCase = true
+                                    ) &&
+                                !alternative.videoId
+                                    .isNullOrBlank()
+                            ) {
+
+                                "https://hdfilmcehennemi.mobi" +
+                                    "/video/embed/" +
+                                    videoId +
+                                    "/?rapidrame_id=" +
+                                    alternative.videoId
+
+                            } else {
+
+                                "https://hdfilmcehennemi.mobi" +
+                                    "/video/embed/" +
+                                    videoId +
+                                    "/"
+                            }
+
+                        val alternativeResult =
                             scrapeIframe(
                                 alternativeUrl
                             )
 
                         if (
-                            result != null
+                            alternativeResult != null
                         ) {
+
+                            result =
+                                alternativeResult
+
+                            usedIframe =
+                                alternativeUrl
+
                             break
                         }
                     }
@@ -1418,17 +1374,15 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * Hiçbir kaynak çözülemediyse
+             * Sonuç yok
              * ====================================================
              */
+            if (
+                result == null
+            ) {
 
-            if (result == null) {
-
-                logError(
-                    "Video URL çıkarılamadı: $pageUrl",
-                    IllegalStateException(
-                        "Rapidrame/iframe decoder sonuç üretmedi"
-                    )
+                println(
+                    "HDFilmCehennemi: Video URL bulunamadı -> $pageUrl"
                 )
 
                 return false
@@ -1437,50 +1391,94 @@ class HdFilmCehennemiProvider : MainAPI() {
             val videoUrl =
                 result.first
 
-            val embedOrigin =
-                result.second
+            /*
+             * ====================================================
+             * ÇALIŞAN IFRAME'İN ORIGIN'I
+             * ====================================================
+             *
+             * Güncel scraper:
+             *
+             * result.embedOrigin =
+             * getEmbedOrigin(usedIframeSrc)
+             *
+             * ardından:
+             *
+             * Referer = embedOrigin + "/"
+             * Origin  = embedOrigin
+             *
+             * Bu özellikle Rapidrame için kritik.
+             * ====================================================
+             */
+            val usedUri =
+                java.net.URI(
+                    usedIframe
+                )
 
-            val referer =
+            val embedOrigin =
+                if (
+                    !usedUri.scheme
+                        .isNullOrBlank() &&
+                    !usedUri.host
+                        .isNullOrBlank()
+                ) {
+
+                    "${usedUri.scheme}://${usedUri.host}"
+
+                } else {
+
+                    "https://www.hdfilmcehennemi.mobi"
+                }
+
+            val streamReferer =
                 "$embedOrigin/"
 
             /*
              * ====================================================
-             * CloudStream'e gerçek M3U8'i gönder
+             * CloudStream stream
              * ====================================================
              */
-
             callback(
                 newExtractorLink(
                     source = this.name,
-                    name = "Rapidrame",
+                    name =
+                        if (
+                            usedIframe.contains(
+                                "rapidrame_id=",
+                                ignoreCase = true
+                            )
+                        ) {
+                            "Rapidrame"
+                        } else {
+                            "HDFilmCehennemi"
+                        },
                     url = videoUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
 
-                    this.referer =
-                        referer
+                    referer =
+                        streamReferer
 
                     quality =
                         Qualities.Unknown.value
 
                     headers = mapOf(
                         "User-Agent" to userAgent,
-                        "Referer" to referer,
+                        "Referer" to streamReferer,
                         "Origin" to embedOrigin
                     )
                 }
             )
 
-            return true
+            true
 
         } catch (error: Exception) {
 
             logError(
-                "Rapidrame bağlantısı alınamadı: $pageUrl",
+                "Rapidrame bağlantısı alınamadı: $data",
                 error
             )
 
-            return false
+            false
         }
     }
 

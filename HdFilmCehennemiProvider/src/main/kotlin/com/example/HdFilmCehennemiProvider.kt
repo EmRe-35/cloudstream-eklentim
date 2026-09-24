@@ -643,37 +643,27 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ====================================================
              */
             fun characterUnmix(
-                value: String
-            ): String {
+    value: String
+): String {
 
-                val output =
-                    StringBuilder()
+    val output = StringBuilder()
 
-                for (
-                    i in value.indices
-                ) {
+    for (i in value.indices) {
+        val charCode = value[i].code
 
-                    var charCode =
-                        value[i].code
+        val shift =
+            (399756995L % (i + 5).toLong()).toInt()
 
-                    charCode =
-                        (
-                            charCode -
-                                (
-                                    399756995L %
-                                        (i + 5)
-                                    ) +
-                                256
-                            ) % 256
+        val unmixed =
+            (charCode - shift + 256) % 256
 
-                    output.append(
-                        charCode.toInt().toChar()
-                    )
-                }
+        output.append(
+            unmixed.toChar()
+        )
+    }
 
-                return output.toString()
+    return output.toString()
             }
-
             /*
              * ====================================================
              * Base64

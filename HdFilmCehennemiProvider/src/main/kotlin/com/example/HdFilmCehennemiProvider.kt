@@ -507,7 +507,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
     /*
      * ============================================================
-     * DİNAMİK RAPIDRAME
+     * DİNAMİK RAPIDRAME / HLS
      * ============================================================
      */
 
@@ -523,9 +523,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             val pageUrl =
                 normalizeUrl(data)
 
-            /*
-             * Film / bölüm sayfasını al
-             */
             val pageDocument =
                 app.get(
                     pageUrl,
@@ -533,20 +530,16 @@ class HdFilmCehennemiProvider : MainAPI() {
                 ).document
 
             /*
-             * Önce iframe bul
+             * Sayfadaki iframe'leri sırayla al.
+             *
+             * Sadece ilk iframe'e bağlı kalmıyoruz.
              */
-            val iframe =
-                pageDocument
-                    .select("iframe")
-                    .firstOrNull()
-
-            val iframeSrc =
-                firstNonBlank(
-                    iframe?.attr("src"),
-                    iframe?.attr("data-src")
+            val iframeElements =
+                pageDocument.select(
+                    "iframe[src], iframe[data-src]"
                 )
 
-            if (iframeSrc.isNullOrBlank()) {
+            if (iframeElements.isEmpty()) {
 
                 println(
                     "HDFilmCehennemi: iframe bulunamadı -> $pageUrl"
@@ -555,14 +548,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 return false
             }
 
-            val primaryIframe =
-                normalizeUrl(
-                    iframeSrc
-                )
-
-            /*
-             * Alternatif playerlar
-             */
             data class AlternativeSource(
                 val name: String,
                 val videoId: String?,
@@ -641,9 +626,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             /*
              * ====================================================
              * CHARACTER UNMIX
-             *
-             * Buradaki Long -> Int dönüşümü özellikle açık
-             * yapılıyor. Önceki derleme hatası burada oluşmuştu.
              * ====================================================
              */
             fun characterUnmix(
@@ -688,9 +670,22 @@ class HdFilmCehennemiProvider : MainAPI() {
                 value: String
             ): String {
 
+                val cleaned =
+                    value
+                        .replace(
+                            "\\/",
+                            "/"
+                        )
+                        .replace(
+                            "\\u002F",
+                            "/",
+                            ignoreCase = true
+                        )
+                        .trim()
+
                 val bytes =
                     android.util.Base64.decode(
-                        value,
+                        cleaned,
                         android.util.Base64.DEFAULT
                     )
 
@@ -701,31 +696,190 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * Video URL kontrolü
+             * URL TEMİZLEME
+             * ====================================================
+             */
+            fun cleanVideoUrl(
+                raw: String?
+            ): String? {
+
+                if (raw.isNullOrBlank()) {
+                    return null
+                }
+
+                var value =
+                    raw.trim()
+
+                value =
+                    value
+                        .replace(
+                            "\\/",
+                            "/"
+                        )
+                        .replace(
+                            "&amp;",
+                            "&"
+                        )
+                        .replace(
+                            "\\u0026",
+                            "&"
+                        )
+                        .replace(
+                            "\\u003D",
+                            "="
+                        )
+                        .replace(
+                            "\\u002F",
+                            "/"
+                        )
+
+                value =
+                    value
+                        .trim(
+                            '"',
+                            '\'',
+                            '`',
+                            ' ',
+                            '\n',
+                            '\r',
+                            '\t'
+                        )
+
+                return value
+            }
+
+            /*
+             * ====================================================
+             * VIDEO URL KONTROLÜ
              * ====================================================
              */
             fun isValidVideoUrl(
                 url: String?
             ): Boolean {
 
-                if (url.isNullOrBlank()) {
+                val value =
+                    cleanVideoUrl(url)
+
+                if (value.isNullOrBlank()) {
                     return false
                 }
 
-                return url.startsWith(
-                    "https://"
-                ) &&
+                return (
+                    value.startsWith(
+                        "https://"
+                    ) ||
+                        value.startsWith(
+                            "http://"
+                        )
+                    ) &&
                     (
-                        url.contains(
-                            ".m3u8"
+                        value.contains(
+                            ".m3u8",
+                            ignoreCase = true
                         ) ||
-                            url.contains(
-                                "/hls/"
+                            value.contains(
+                                "/hls/",
+                                ignoreCase = true
                             ) ||
-                            url.contains(
-                                ".mp4"
+                            value.contains(
+                                ".mp4",
+                                ignoreCase = true
                             )
                         )
+            }
+
+            /*
+             * ====================================================
+             * HERHANGİ BİR M3U8 URL'SİNİ HTML / JS İÇİNDEN BUL
+             *
+             * Bu bölüm /rplayer sayfası için özellikle önemli.
+             * ====================================================
+             */
+            fun findVideoUrlInText(
+                text: String
+            ): String? {
+
+                if (text.isBlank()) {
+                    return null
+                }
+
+                val normalized =
+                    text
+                        .replace(
+                            "\\/",
+                            "/"
+                        )
+                        .replace(
+                            "&amp;",
+                            "&"
+                        )
+                        .replace(
+                            "\\u002F",
+                            "/"
+                        )
+                        .replace(
+                            "\\u0026",
+                            "&"
+                        )
+
+                val patterns =
+                    listOf(
+
+                        /*
+                         * Tam URL
+                         */
+                        Regex(
+                            """https?://[^"'`<>\s\\]+\.m3u8(?:\?[^"'`<>\s\\]*)?""",
+                            setOf(
+                                RegexOption.IGNORE_CASE
+                            )
+                        ),
+
+                        /*
+                         * JSON / JS içinde file: "..."
+                         */
+                        Regex(
+                            """(?:file|src|url|source)\s*[:=]\s*["'](https?://[^"'\\]+\.m3u8(?:\?[^"'\\]*)?)["']""",
+                            setOf(
+                                RegexOption.IGNORE_CASE
+                            )
+                        ),
+
+                        /*
+                         * Sadece URL'nin escape edilmemiş parçası
+                         */
+                        Regex(
+                            """(https?://[^"'`\s<>]+\.m3u8[^"'`\s<>]*)""",
+                            setOf(
+                                RegexOption.IGNORE_CASE
+                            )
+                        )
+                    )
+
+                for (pattern in patterns) {
+
+                    val match =
+                        pattern
+                            .find(normalized)
+                            ?.groupValues
+                            ?.getOrNull(1)
+                            ?: pattern
+                                .find(normalized)
+                                ?.value
+
+                    val cleaned =
+                        cleanVideoUrl(match)
+
+                    if (
+                        isValidVideoUrl(
+                            cleaned
+                        )
+                    ) {
+                        return cleaned
+                    }
+                }
+
+                return null
             }
 
             /*
@@ -909,9 +1063,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 val value =
                     parts.joinToString("")
 
-                /*
-                 * Variant 3
-                 */
                 try {
 
                     val result =
@@ -919,12 +1070,17 @@ class HdFilmCehennemiProvider : MainAPI() {
                             value
                         )
 
-                    if (
-                        isValidVideoUrl(
+                    val cleaned =
+                        cleanVideoUrl(
                             result
                         )
+
+                    if (
+                        isValidVideoUrl(
+                            cleaned
+                        )
                     ) {
-                        return result
+                        return cleaned
                     }
 
                 } catch (
@@ -932,9 +1088,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 ) {
                 }
 
-                /*
-                 * Variant 1
-                 */
                 try {
 
                     val result =
@@ -942,12 +1095,17 @@ class HdFilmCehennemiProvider : MainAPI() {
                             value
                         )
 
-                    if (
-                        isValidVideoUrl(
+                    val cleaned =
+                        cleanVideoUrl(
                             result
                         )
+
+                    if (
+                        isValidVideoUrl(
+                            cleaned
+                        )
                     ) {
-                        return result
+                        return cleaned
                     }
 
                 } catch (
@@ -955,9 +1113,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 ) {
                 }
 
-                /*
-                 * Variant 2
-                 */
                 try {
 
                     val result =
@@ -965,12 +1120,17 @@ class HdFilmCehennemiProvider : MainAPI() {
                             value
                         )
 
-                    if (
-                        isValidVideoUrl(
+                    val cleaned =
+                        cleanVideoUrl(
                             result
                         )
+
+                    if (
+                        isValidVideoUrl(
+                            cleaned
+                        )
                     ) {
-                        return result
+                        return cleaned
                     }
 
                 } catch (
@@ -985,12 +1145,6 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ====================================================
              * IFRAME SCRAPER
              * ====================================================
-             *
-             * ÖNEMLİ:
-             *
-             * Iframe HTML'i alınırken HDFilmCehennemi.ws
-             * Referer'ı gönderiliyor.
-             * ====================================================
              */
             suspend fun scrapeIframe(
                 iframeUrl: String
@@ -998,54 +1152,71 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                 return try {
 
+                    val isRapidPlayer =
+                        iframeUrl.contains(
+                            "/rplayer/",
+                            ignoreCase = true
+                        ) ||
+                            iframeUrl.contains(
+                                "rapidrame",
+                                ignoreCase = true
+                            )
+
+                    /*
+                     * Rapidrame/rplayer için kaynak sitenin
+                     * .ws referer'ı kullanılıyor.
+                     */
+                    val iframeReferer =
+                        if (isRapidPlayer) {
+                            "https://www.hdfilmcehennemi.ws/"
+                        } else {
+                            "$mainUrl/"
+                        }
+
+                    val iframeHeaders =
+                        mapOf(
+                            "User-Agent" to userAgent,
+                            "Accept" to
+                                "text/html,application/xhtml+xml," +
+                                "application/xml;q=0.9,*/*;q=0.8",
+                            "Accept-Language" to
+                                "tr-TR,tr;q=0.9,en;q=0.8",
+                            "Referer" to iframeReferer
+                        )
+
                     val iframeResponse =
                         app.get(
                             iframeUrl,
-                            headers = mapOf(
-                                "User-Agent" to userAgent,
-                                "Accept" to
-                                    "text/html,application/xhtml+xml," +
-                                    "application/xml;q=0.9,*/*;q=0.8",
-                                "Accept-Language" to
-                                    "tr-TR,tr;q=0.9,en;q=0.8",
-                                "Referer" to
-                                    "https://www.hdfilmcehennemi.ws/"
-                            )
+                            headers = iframeHeaders
                         )
 
                     val html =
                         iframeResponse.text
 
-                    if (
-                        html.isBlank()
-                    ) {
+                    if (html.isBlank()) {
                         return null
                     }
 
                     /*
-                     * Önce doğrudan m3u8 ara.
+                     * ------------------------------------------------
+                     * 1. HTML içinde doğrudan M3U8
+                     * ------------------------------------------------
                      */
                     val directM3u8 =
-                        Regex(
-                            """https?://[^"'\\\s<>]+\.m3u8[^"'\\\s<>]*"""
+                        findVideoUrlInText(
+                            html
                         )
-                            .find(
-                                html
-                            )
-                            ?.value
 
                     if (
-                        isValidVideoUrl(
-                            directM3u8
-                        )
+                        directM3u8 != null
                     ) {
                         return directM3u8
                     }
 
                     /*
-                     * =================================================
-                     * PACKED JS
-                     * =================================================
+                     * ------------------------------------------------
+                     * 2. Packed JS
+                     * ------------------------------------------------
                      */
                     val packedRegex =
                         Regex(
@@ -1083,6 +1254,21 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 base,
                                 keywords
                             )
+
+                        /*
+                         * Packed JS açıldıktan sonra doğrudan
+                         * m3u8 aranıyor.
+                         */
+                        val decodedDirect =
+                            findVideoUrlInText(
+                                decodedJs
+                            )
+
+                        if (
+                            decodedDirect != null
+                        ) {
+                            return decodedDirect
+                        }
 
                         /*
                          * dc_xxx(["..."])
@@ -1130,13 +1316,13 @@ class HdFilmCehennemiProvider : MainAPI() {
                     }
 
                     /*
-                     * =================================================
-                     * JSON-LD FALLBACK
-                     * =================================================
+                     * ------------------------------------------------
+                     * 3. JSON-LD
+                     * ------------------------------------------------
                      */
                     val jsonLdMatch =
                         Regex(
-                            """<script type=["']application/ld\+json["']>([\s\S]*?)</script>""",
+                            """<script[^>]+type=["']application/ld\+json["'][^>]*>([\s\S]*?)</script>""",
                             setOf(
                                 RegexOption.IGNORE_CASE
                             )
@@ -1166,12 +1352,17 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 ?.groupValues
                                 ?.getOrNull(1)
 
-                        if (
-                            isValidVideoUrl(
+                        val cleaned =
+                            cleanVideoUrl(
                                 contentUrl
                             )
+
+                        if (
+                            isValidVideoUrl(
+                                cleaned
+                            )
                         ) {
-                            return contentUrl
+                            return cleaned
                         }
                     }
 
@@ -1193,35 +1384,87 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * 1. ANA IFRAME
+             * IFRAME'LERİ SIRAYLA DENE
              * ====================================================
              */
-            var videoUrl =
-                scrapeIframe(
-                    primaryIframe
+            var videoUrl: String? = null
+
+            var usedIframe: String? = null
+
+            for (
+                iframeElement in iframeElements
+            ) {
+
+                val rawIframe =
+                    firstNonBlank(
+                        iframeElement.attr("src"),
+                        iframeElement.attr("data-src")
+                    )
+
+                if (
+                    rawIframe.isNullOrBlank()
+                ) {
+                    continue
+                }
+
+                val currentIframe =
+                    normalizeUrl(
+                        rawIframe
+                    )
+
+                println(
+                    "HDFilmCehennemi: iframe deneniyor -> " +
+                        currentIframe
                 )
 
-            var usedIframe =
-                primaryIframe
+                val currentVideo =
+                    scrapeIframe(
+                        currentIframe
+                    )
+
+                if (
+                    currentVideo != null
+                ) {
+
+                    videoUrl =
+                        currentVideo
+
+                    usedIframe =
+                        currentIframe
+
+                    break
+                }
+            }
 
             /*
              * ====================================================
-             * 2. ALTERNATİF KAYNAKLAR
+             * ALTERNATİF PLAYER FALLBACK
              * ====================================================
              */
             if (
                 videoUrl == null
             ) {
 
+                val primaryIframe =
+                    iframeElements
+                        .firstOrNull()
+                        ?.let {
+                            firstNonBlank(
+                                it.attr("src"),
+                                it.attr("data-src")
+                            )
+                        }
+
                 val videoId =
-                    Regex(
-                        """embed/([^/?]+)"""
-                    )
-                        .find(
-                            primaryIframe
-                        )
-                        ?.groupValues
-                        ?.getOrNull(1)
+                    primaryIframe
+                        ?.let {
+                            Regex(
+                                """embed/([^/?]+)"""
+                            )
+                                .find(it)
+                                ?.groupValues
+                                ?.getOrNull(1)
+                        }
 
                 if (
                     !videoId.isNullOrBlank()
@@ -1232,9 +1475,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         in alternatives
                     ) {
 
-                        /*
-                         * Aktif kaynak zaten yukarıda denendi.
-                         */
                         if (
                             alternative.active
                         ) {
@@ -1270,6 +1510,11 @@ class HdFilmCehennemiProvider : MainAPI() {
                                     "/"
                             }
 
+                        println(
+                            "HDFilmCehennemi: alternatif deneniyor -> " +
+                                alternativeUrl
+                        )
+
                         val alternativeResult =
                             scrapeIframe(
                                 alternativeUrl
@@ -1304,8 +1549,27 @@ class HdFilmCehennemiProvider : MainAPI() {
                     "HDFilmCehennemi: Video URL bulunamadı -> $pageUrl"
                 )
 
+                return false
+            }
+
+            /*
+             * ====================================================
+             * URL TEMİZLE
+             * ====================================================
+             */
+            videoUrl =
+                cleanVideoUrl(
+                    videoUrl
+                )
+
+            if (
+                !isValidVideoUrl(
+                    videoUrl
+                )
+            ) {
+
                 println(
-                    "HDFilmCehennemi: iframe -> $primaryIframe"
+                    "HDFilmCehennemi: Geçersiz video URL -> $videoUrl"
                 )
 
                 return false
@@ -1315,31 +1579,24 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ====================================================
              * RAPIDRAME TESPİTİ
              * ====================================================
-             *
-             * Örnek:
-             *
-             * https://www.hdfilmcehennemi.nl/rplayer/hs531evimkvg/
-             *
-             * Bu URL'nin host'u .nl olsa bile video sunucusuna
-             * Rapidrame header'ları gönderiyoruz.
-             *
-             * Kullanıcının 1DM+ ile yakaladığı HLS URL'leri de
-             * Rapidrame alan adından geliyor.
-             * ====================================================
              */
             val isRapidrame =
-                usedIframe.contains(
+                usedIframe?.contains(
                     "/rplayer/",
                     ignoreCase = true
-                ) ||
-                    usedIframe.contains(
+                ) == true ||
+                    usedIframe?.contains(
                         "rapidrame",
                         ignoreCase = true
-                    ) ||
-                    usedIframe.contains(
+                    ) == true ||
+                    usedIframe?.contains(
                         "rapidrame_id=",
                         ignoreCase = true
-                    )
+                    ) == true ||
+                    videoUrl?.contains(
+                        "rapidrame.com",
+                        ignoreCase = true
+                    ) == true
 
             /*
              * ====================================================
@@ -1355,9 +1612,7 @@ class HdFilmCehennemiProvider : MainAPI() {
             ) {
 
                 /*
-                 * KRİTİK:
-                 *
-                 * Rapidrame için .ws
+                 * Rapidrame için özellikle .ws.
                  */
                 streamReferer =
                     "https://www.hdfilmcehennemi.ws/"
@@ -1367,9 +1622,6 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             } else {
 
-                /*
-                 * Close / normal embed
-                 */
                 streamReferer =
                     "https://hdfilmcehennemi.mobi/"
 
@@ -1403,7 +1655,9 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * CLOUDSTREAM EXTRACTOR LINK
+             * CLOUDSTREAM LINK
+             *
+             * Header'lar burada özellikle M3U8 linkine bağlanıyor.
              * ====================================================
              */
             callback(
@@ -1413,9 +1667,9 @@ class HdFilmCehennemiProvider : MainAPI() {
                         if (
                             isRapidrame
                         ) {
-                            "Rapidrame"
+                            "Rapidrame HLS"
                         } else {
-                            "HDFilmCehennemi"
+                            "HDFilmCehennemi HLS"
                         },
                     url = videoUrl,
                     type = ExtractorLinkType.M3U8
@@ -1427,11 +1681,13 @@ class HdFilmCehennemiProvider : MainAPI() {
                     quality =
                         Qualities.Unknown.value
 
-                    headers = mapOf(
-                        "User-Agent" to userAgent,
-                        "Referer" to streamReferer,
-                        "Origin" to streamOrigin
-                    )
+                    headers =
+                        mapOf(
+                            "User-Agent" to userAgent,
+                            "Referer" to streamReferer,
+                            "Origin" to streamOrigin,
+                            "Accept" to "*/*"
+                        )
                 }
             )
 

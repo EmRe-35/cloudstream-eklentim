@@ -1220,7 +1220,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                      */
                     val packedRegex =
                         Regex(
-                            """eval\(function\(p,a,c,k,e,d\)\{.*?\}\('(.+)',(\d+),(\d+),'([^']+)'""",
+                            """eval\(function\(p,a,c,k,e,d\)\{.*?\}\('(.+)',(\d+),(\d+),'([^']+)'"",
                             setOf(
                                 RegexOption.DOT_MATCHES_ALL
                             )
@@ -1554,22 +1554,38 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ====================================================
-             * URL TEMİZLE
+             * URL TEMİZLE VE NULLABLE TİPİ KESİNLEŞTİR
+             *
+             * Buradaki önemli düzeltme:
+             *
+             * cleanVideoUrl() String? döndürüyor.
+             * Bu nedenle sonucu doğrudan videoUrl içine koymak
+             * yerine kesin olarak String olan resolvedVideoUrl
+             * oluşturuyoruz.
              * ====================================================
              */
-            videoUrl =
+            val resolvedVideoUrl: String =
                 cleanVideoUrl(
                     videoUrl
                 )
+                    ?: run {
+
+                        println(
+                            "HDFilmCehennemi: Video URL temizlenemedi -> $videoUrl"
+                        )
+
+                        return false
+                    }
 
             if (
                 !isValidVideoUrl(
-                    videoUrl
+                    resolvedVideoUrl
                 )
             ) {
 
                 println(
-                    "HDFilmCehennemi: Geçersiz video URL -> $videoUrl"
+                    "HDFilmCehennemi: Geçersiz video URL -> " +
+                        resolvedVideoUrl
                 )
 
                 return false
@@ -1593,10 +1609,10 @@ class HdFilmCehennemiProvider : MainAPI() {
                         "rapidrame_id=",
                         ignoreCase = true
                     ) == true ||
-                    videoUrl?.contains(
+                    resolvedVideoUrl.contains(
                         "rapidrame.com",
                         ignoreCase = true
-                    ) == true
+                    )
 
             /*
              * ====================================================
@@ -1638,7 +1654,7 @@ class HdFilmCehennemiProvider : MainAPI() {
             )
 
             println(
-                "HDFilmCehennemi: m3u8 = $videoUrl"
+                "HDFilmCehennemi: m3u8 = $resolvedVideoUrl"
             )
 
             println(
@@ -1657,7 +1673,9 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ====================================================
              * CLOUDSTREAM LINK
              *
-             * Header'lar burada özellikle M3U8 linkine bağlanıyor.
+             * Burada artık nullable videoUrl değil,
+             * kesin olarak String olan resolvedVideoUrl
+             * kullanılıyor.
              * ====================================================
              */
             callback(
@@ -1671,7 +1689,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                         } else {
                             "HDFilmCehennemi HLS"
                         },
-                    url = videoUrl,
+                    url = resolvedVideoUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
 
@@ -1828,4 +1846,4 @@ class HdFilmCehennemiProvider : MainAPI() {
                 error.message
         )
     }
-}
+                                                 }

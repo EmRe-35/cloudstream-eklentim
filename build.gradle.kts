@@ -50,6 +50,7 @@ fun Project.android(
 }
 
 subprojects {
+
     apply(plugin = "com.android.library")
     apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
@@ -62,6 +63,7 @@ subprojects {
     }
 
     android {
+
         namespace = "com.example"
 
         defaultConfig {
@@ -76,22 +78,47 @@ subprojects {
         }
 
         tasks.withType<KotlinJvmCompile> {
+
             compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_1_8)
+
+                jvmTarget.set(
+                    JvmTarget.JVM_1_8
+                )
 
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
-                    "-Xno-receiver-assertions"
+                    "-Xno-receiver-assertions",
+                    "-Xskip-metadata-version-check"
                 )
             }
         }
     }
 
     dependencies {
-        // ÖNEMLİ:
-        // implementation configuration'ını subproject içinden alıyoruz.
-        val implementation by configurations
+
+        /*
+         * ============================================================
+         * CLOUDSTREAM API
+         * ============================================================
+         *
+         * Bu configuration CloudStream Gradle plugini tarafından
+         * oluşturuluyor.
+         *
+         * MainAPI, TvType, ExtractorLink, Plugin vb. buradan gelir.
+         */
+
+        val cloudstream by configurations
+
+        cloudstream(
+            "com.lagradost:cloudstream3:pre-release"
+        )
+
+        /*
+         * ============================================================
+         * NORMAL DEPENDENCIES
+         * ============================================================
+         */
 
         implementation(
             kotlin("stdlib")
@@ -115,3 +142,6 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(layout.buildDirectory)
 }
+
+
+

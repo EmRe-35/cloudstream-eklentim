@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 jobs:
@@ -15,117 +14,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ============================================================
-      # CHECKOUT
-      # ============================================================
-
       - name: Kodu çek
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-
-      # ============================================================
-      # KESİN KAYNAK KONTROLÜ
-      # ============================================================
-
-      - name: Derlenecek kaynak kodu doğrula
-        shell: bash
-        run: |
-          set -e
-
-          PROVIDER="HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt"
-
-          echo ""
-          echo "=================================================="
-          echo "GITHUB ACTIONS KAYNAK KONTROLÜ"
-          echo "=================================================="
-
-          echo ""
-          echo "Repository:"
-          echo "${GITHUB_REPOSITORY}"
-
-          echo ""
-          echo "GitHub SHA:"
-          echo "${GITHUB_SHA}"
-
-          echo ""
-          echo "Checkout HEAD:"
-          git rev-parse HEAD
-
-          echo ""
-          echo "Commit:"
-          git log -1 --oneline --decorate
-
-          echo ""
-          echo "Provider:"
-          echo "${PROVIDER}"
-
-          if [ ! -f "$PROVIDER" ]; then
-            echo ""
-            echo "HATA: Provider dosyası bulunamadı."
-            exit 1
-          fi
-
-          echo ""
-          echo "Provider satır sayısı:"
-          wc -l "$PROVIDER"
-
-          echo ""
-          echo "Provider SHA256:"
-          sha256sum "$PROVIDER"
-
-          echo ""
-          echo "=================================================="
-          echo "2062. SATIR KONTROLÜ"
-          echo "=================================================="
-
-          if [ "$(wc -l < "$PROVIDER")" -ge 2062 ]; then
-            sed -n '2045,2075p' "$PROVIDER"
-          else
-            echo "Bu dosyada 2062. satır YOK."
-            echo "Gerçek satır sayısı:"
-            wc -l "$PROVIDER"
-          fi
-
-          echo ""
-          echo "=================================================="
-          echo "newExtractorLink ÇAĞRILARI"
-          echo "=================================================="
-
-          grep -n -B8 -A12 "newExtractorLink" "$PROVIDER" || true
-
-          echo ""
-          echo "=================================================="
-          echo "newExtractorLink KONTROLÜ"
-          NEW_EXTRACTOR_COUNT=$(grep -c "newExtractorLink" "$PROVIDER" || true)
-          echo "Bulunan newExtractorLink sayısı: $NEW_EXTRACTOR_COUNT"
-    if [ "$NEW_EXTRACTOR_COUNT" -ne 0 ]; then
-          echo "HATA: Provider içinde newExtractorLink çağrısı bulundu."
-          exit 1
-          fi
-
-          echo "OK: newExtractorLink çağrısı yok."
-
-          echo ""
-          echo "OK: source = this.name mevcut."
-
-          echo ""
-          echo "=================================================="
-          echo "PROVIDER SON 80 SATIR"
-          echo "=================================================="
-
-          tail -n 80 "$PROVIDER"
-
-          echo ""
-          echo "=================================================="
-          echo "KAYNAK KONTROLÜ TAMAMLANDI"
-          echo "=================================================="
-
-      # ============================================================
-      # JDK
-      # ============================================================
 
       - name: JDK kur
         uses: actions/setup-java@v4
@@ -133,224 +26,147 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # ============================================================
-      # GRADLE
-      # ============================================================
-
       - name: Gradle 8.9 kur
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: "8.9"
 
-      # ============================================================
-      # CLOUDSTREAM GRADLE PLUGIN
-      # ============================================================
+      - name: Kaynak kodu kontrol et
+        shell: bash
+        run: |
+          set -e
+          PROVIDER="HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt"
+          echo "=================================================="
+          echo "GITHUB ACTIONS KAYNAK KONTROLÜ"
+          echo "=================================================="
+          echo "Repository:"
+          echo "${GITHUB_REPOSITORY}"
+          echo "GitHub SHA:"
+          echo "${GITHUB_SHA}"
+          echo "Checkout HEAD:"
+          git rev-parse HEAD
+          echo "Commit:"
+          git log -1 --oneline --decorate
+          echo "Provider:"
+          echo "${PROVIDER}"
+          if [ ! -f "$PROVIDER" ]; then
+            echo "HATA: Provider dosyası bulunamadı."
+            exit 1
+          fi
+          echo ""
+          echo "Provider satır sayısı:"
+          wc -l "$PROVIDER"
+          echo ""
+          echo "Provider SHA256:"
+          sha256sum "$PROVIDER"
+          echo ""
+          echo "=================================================="
+          echo "2062. SATIR KONTROLÜ"
+          echo "=================================================="
+          if [ "$(wc -l < "$PROVIDER")" -ge 2062 ]; then
+            sed -n '2045,2075p' "$PROVIDER"
+          else
+            echo "Bu dosyada 2062. satır yok."
+          fi
+          echo ""
+          echo "=================================================="
+          echo "newExtractorLink KONTROLÜ"
+          echo "=================================================="
+          NEW_EXTRACTOR_COUNT=$(grep -c "newExtractorLink" "$PROVIDER" || true)
+          echo "Bulunan newExtractorLink sayısı: $NEW_EXTRACTOR_COUNT"
+          if [ "$NEW_EXTRACTOR_COUNT" -ne 0 ]; then
+            echo ""
+            echo "HATA: Provider içinde newExtractorLink çağrısı bulundu."
+            echo ""
+            grep -n -B8 -A12 "newExtractorLink" "$PROVIDER" || true
+            exit 1
+          fi
+          echo ""
+          echo "OK: newExtractorLink çağrısı bulunamadı."
 
       - name: CloudStream Gradle pluginini hazırla
         shell: bash
         run: |
           set -e
-
-          echo ""
           echo "=================================================="
           echo "CLOUDSTREAM GRADLE PLUGIN"
           echo "=================================================="
-
           rm -rf /tmp/cloudstream-gradle
-
-          git clone \
-            --depth 1 \
-            https://github.com/recloudstream/gradle.git \
-            /tmp/cloudstream-gradle
-
+          git clone --depth 1 https://github.com/recloudstream/gradle.git /tmp/cloudstream-gradle
           cd /tmp/cloudstream-gradle
-
           chmod +x gradlew
-
-          ./gradlew \
-            publishToMavenLocal \
-            --no-daemon \
-            --stacktrace
-
-          echo ""
-          echo "Maven Local CloudStream dosyaları:"
-
-          find "$HOME/.m2/repository/com/lagradost/cloudstream3" \
-            -type f \
-            2>/dev/null || true
-
-      # ============================================================
-      # CLOUDSTREAM API
-      # ============================================================
+          ./gradlew publishToMavenLocal --no-daemon --stacktrace
 
       - name: CloudStream API kontrolü
         shell: bash
         run: |
           set -e
-
-          echo ""
           echo "=================================================="
-          echo "CLOUDSTREAM API"
+          echo "CLOUDSTREAM API KONTROLÜ"
           echo "=================================================="
-
-          find "$HOME/.m2/repository" \
-            -path "*cloudstream3*" \
-            -type f \
-            2>/dev/null \
-            | head -100
-
-      # ============================================================
-      # DEPENDENCIES
-      # ============================================================
+          find ~/.m2/repository -path "*cloudstream3*" -type f | head -100
 
       - name: Gradle dependency kontrolü
         shell: bash
         run: |
           set -e
-
-          echo ""
           echo "=================================================="
-          echo "DEPENDENCIES"
+          echo "DEPENDENCY KONTROLÜ"
           echo "=================================================="
-
-          gradle \
-            :HdFilmCehennemiProvider:dependencies \
-            --configuration debugCompileClasspath \
-            --no-daemon \
-            --stacktrace
-
-      # ============================================================
-      # CLEAN
-      # ============================================================
-
-      - name: Temizle
-        shell: bash
-        run: |
-          set -e
-
-          echo ""
-          echo "=================================================="
-          echo "CLEAN"
-          echo "=================================================="
-
-          gradle \
-            clean \
-            --no-daemon \
-            --stacktrace
-
-      # ============================================================
-      # BUILD
-      # ============================================================
+          gradle :HdFilmCehennemiProvider:dependencies --configuration debugCompileClasspath --no-daemon --stacktrace
 
       - name: Eklentiyi derle
         shell: bash
         run: |
           set -e
-
-          echo ""
           echo "=================================================="
           echo "EKLENTİ DERLEME BAŞLIYOR"
           echo "=================================================="
+          gradle make --no-daemon --stacktrace
 
-          gradle \
-            make \
-            --no-daemon \
-            --stacktrace
-
-      # ============================================================
-      # PLUGINS JSON
-      # ============================================================
-
-      - name: plugins.json üret
+      - name: plugins.json oluştur
         shell: bash
         run: |
           set -e
-
-          echo ""
           echo "=================================================="
-          echo "PLUGINS.JSON"
+          echo "PLUGINS.JSON OLUŞTURULUYOR"
           echo "=================================================="
-
-          gradle \
-            makePluginsJson \
-            --no-daemon \
-            --stacktrace
-
-      # ============================================================
-      # OUTPUT
-      # ============================================================
+          gradle makePluginsJson --no-daemon --stacktrace
 
       - name: Derlenen dosyaları hazırla
         shell: bash
         run: |
           set -e
-
-          echo ""
           echo "=================================================="
-          echo "BUILD ÇIKTILARI"
+          echo "DERLENEN DOSYALAR"
           echo "=================================================="
-
           rm -rf /tmp/cs-out
           mkdir -p /tmp/cs-out
-
-          find . \
-            -name "*.cs3" \
-            -exec cp {} /tmp/cs-out/ \;
-
-          find . \
-            -name "plugins.json" \
-            -not -path "*/node_modules/*" \
-            -exec cp {} /tmp/cs-out/ \;
-
+          find . -name "*.cs3" -exec cp {} /tmp/cs-out/ \;
+          find . -name "plugins.json" -not -path "*/node_modules/*" -exec cp {} /tmp/cs-out/ \;
           echo ""
-          echo "Üretilen dosyalar:"
+          echo "Oluşturulan dosyalar:"
           ls -lah /tmp/cs-out
 
-          if [ -z "$(find /tmp/cs-out -maxdepth 1 -type f -print -quit)" ]; then
-            echo ""
-            echo "HATA: .cs3 veya plugins.json oluşturulmadı."
-            exit 1
-          fi
-
-      # ============================================================
-      # BUILDS BRANCH
-      # ============================================================
-
-      - name: Builds branch'ine yayınla
+      - name: Builds branchine yayınla
         shell: bash
         run: |
           set -e
-
-          echo ""
           echo "=================================================="
           echo "BUILDS BRANCH YAYINI"
           echo "=================================================="
-
+          cd /tmp/cs-out
+          if [ -z "$(find . -maxdepth 1 -type f -print -quit)" ]; then
+            echo "HATA: .cs3 veya plugins.json oluşturulmadı."
+            exit 1
+          fi
           cd "$GITHUB_WORKSPACE"
-
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-
           git checkout --orphan builds-temp
-
           git rm -rf . > /dev/null 2>&1 || true
-
           cp /tmp/cs-out/* .
-
           git add -A
+          git commit -m "Otomatik derleme: ${{ github.sha }}"
 
-          git commit \
-            -m "Otomatik derleme: ${{ github.sha }}"
-
-          git push \
-            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
-            builds-temp:builds \
-            --force
-
-          echo ""
-          echo "=================================================="
-          echo "YAYIN BAŞARILI"
-          echo "=================================================="
-
-
-
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" builds-temp:builds --force

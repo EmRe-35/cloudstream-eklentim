@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Kodu çek
         uses: actions/checkout@v4
@@ -23,31 +24,63 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Gradle'ı kur
+      - name: Gradle 8.9 kur
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: "8.9"
 
+      # CloudStream Gradle pluginini JitPack yerine
+      # doğrudan GitHub kaynak kodundan derleyip
+      # Maven Local'a kuruyoruz.
+      - name: CloudStream Gradle pluginini hazırla
+        run: |
+          git clone --depth 1 \
+            https://github.com/recloudstream/gradle.git \
+            /tmp/cloudstream-gradle
+
+          cd /tmp/cloudstream-gradle
+
+          chmod +x gradlew
+
+          ./gradlew publishToMavenLocal --no-daemon
+
+      # Artık root build.gradle.kts,
+      # com.lagradost.cloudstream3:gradle:local-SNAPSHOT
+      # dependency'sini Maven Local'dan bulabilecek.
       - name: Eklentileri derle (.cs3 üretir)
-        run: gradle make
+        run: gradle make --no-daemon
 
       - name: plugins.json üret
-        run: gradle makePluginsJson
+        run: gradle makePluginsJson --no-daemon
 
       - name: Derlenen dosyaları 'builds' branch'ine yayınla
         run: |
           mkdir -p /tmp/cs-out
-          find . -name "*.cs3" -exec cp {} /tmp/cs-out/ \;
-          find . -name "plugins.json" -not -path "*/node_modules/*" -exec cp {} /tmp/cs-out/ \;
+
+          find . \
+            -name "*.cs3" \
+            -exec cp {} /tmp/cs-out/ \;
+
+          find . \
+            -name "plugins.json" \
+            -not -path "*/node_modules/*" \
+            -exec cp {} /tmp/cs-out/ \;
 
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
           git checkout --orphan builds-temp
+
           git rm -rf . > /dev/null 2>&1 || true
 
           cp /tmp/cs-out/* .
 
           git add -A
-          git commit -m "Otomatik derleme: ${{ github.sha }}"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git builds-temp:builds --force
+
+          git commit \
+            -m "Otomatik derleme: ${{ github.sha }}"
+
+          git push \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
+            builds-temp:builds \
+            --force

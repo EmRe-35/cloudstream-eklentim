@@ -17,7 +17,7 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. KODU ÇEK
+      # CHECKOUT
       # ============================================================
 
       - name: Kodu çek
@@ -27,39 +27,44 @@ jobs:
           ref: ${{ github.sha }}
 
       # ============================================================
-      # 2. CHECKOUT KONTROLÜ
+      # KESİN KAYNAK KONTROLÜ
       # ============================================================
 
-      - name: Kaynak kodu kesin olarak kontrol et
+      - name: Derlenecek kaynak kodu doğrula
         shell: bash
         run: |
           set -e
 
           PROVIDER="HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt"
 
+          echo ""
           echo "=================================================="
-          echo "CHECKOUT KONTROLÜ"
+          echo "GITHUB ACTIONS KAYNAK KONTROLÜ"
           echo "=================================================="
 
           echo ""
-          echo "GitHub Actions SHA:"
-          echo "${{ github.sha }}"
+          echo "Repository:"
+          echo "${GITHUB_REPOSITORY}"
 
           echo ""
-          echo "Checkout edilen SHA:"
+          echo "GitHub SHA:"
+          echo "${GITHUB_SHA}"
+
+          echo ""
+          echo "Checkout HEAD:"
           git rev-parse HEAD
 
           echo ""
-          echo "Branch:"
-          git branch --show-current || true
+          echo "Commit:"
+          git log -1 --oneline --decorate
 
           echo ""
           echo "Provider:"
-          echo "$PROVIDER"
+          echo "${PROVIDER}"
 
           if [ ! -f "$PROVIDER" ]; then
             echo ""
-            echo "HATA: Provider dosyası bulunamadı!"
+            echo "HATA: Provider dosyası bulunamadı."
             exit 1
           fi
 
@@ -68,42 +73,64 @@ jobs:
           wc -l "$PROVIDER"
 
           echo ""
-          echo "=================================================="
-          echo "newExtractorLink KONTROLÜ"
-          echo "=================================================="
-
-          grep -n -B5 -A10 "newExtractorLink" "$PROVIDER" || true
+          echo "Provider SHA256:"
+          sha256sum "$PROVIDER"
 
           echo ""
           echo "=================================================="
-          echo "SOURCE PARAMETRESİ KONTROLÜ"
+          echo "2062. SATIR KONTROLÜ"
           echo "=================================================="
 
-          if grep -q "source = this.name" "$PROVIDER"; then
-            echo "OK: source = this.name bulundu."
+          if [ "$(wc -l < "$PROVIDER")" -ge 2062 ]; then
+            sed -n '2045,2075p' "$PROVIDER"
           else
+            echo "Bu dosyada 2062. satır YOK."
+            echo "Gerçek satır sayısı:"
+            wc -l "$PROVIDER"
+          fi
+
+          echo ""
+          echo "=================================================="
+          echo "newExtractorLink ÇAĞRILARI"
+          echo "=================================================="
+
+          grep -n -B8 -A12 "newExtractorLink" "$PROVIDER" || true
+
+          echo ""
+          echo "=================================================="
+          echo "source = this.name KONTROLÜ"
+          echo "=================================================="
+
+          SOURCE_COUNT=$(grep -c "source = this.name" "$PROVIDER" || true)
+
+          echo "Bulunan source = this.name sayısı: $SOURCE_COUNT"
+
+          if [ "$SOURCE_COUNT" -eq 0 ]; then
             echo ""
-            echo "HATA: source = this.name bulunamadı!"
+            echo "HATA:"
+            echo "Provider dosyasında source = this.name bulunamadı."
             echo ""
             echo "Actions yanlış/eski provider dosyasını derliyor."
             exit 1
           fi
 
           echo ""
-          echo "=================================================="
-          echo "PROVIDER SON 150 SATIR"
-          echo "=================================================="
-
-          tail -n 150 "$PROVIDER"
+          echo "OK: source = this.name mevcut."
 
           echo ""
           echo "=================================================="
-          echo "KAYNAK KOD KONTROLÜ TAMAMLANDI"
+          echo "PROVIDER SON 80 SATIR"
           echo "=================================================="
 
+          tail -n 80 "$PROVIDER"
+
+          echo ""
+          echo "=================================================="
+          echo "KAYNAK KONTROLÜ TAMAMLANDI"
+          echo "=================================================="
 
       # ============================================================
-      # 3. JDK
+      # JDK
       # ============================================================
 
       - name: JDK kur
@@ -112,9 +139,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-
       # ============================================================
-      # 4. GRADLE
+      # GRADLE
       # ============================================================
 
       - name: Gradle 8.9 kur
@@ -122,9 +148,8 @@ jobs:
         with:
           gradle-version: "8.9"
 
-
       # ============================================================
-      # 5. CLOUDSTREAM GRADLE PLUGIN
+      # CLOUDSTREAM GRADLE PLUGIN
       # ============================================================
 
       - name: CloudStream Gradle pluginini hazırla
@@ -132,6 +157,7 @@ jobs:
         run: |
           set -e
 
+          echo ""
           echo "=================================================="
           echo "CLOUDSTREAM GRADLE PLUGIN"
           echo "=================================================="
@@ -159,9 +185,8 @@ jobs:
             -type f \
             2>/dev/null || true
 
-
       # ============================================================
-      # 6. CLOUDSTREAM API KONTROLÜ
+      # CLOUDSTREAM API
       # ============================================================
 
       - name: CloudStream API kontrolü
@@ -169,6 +194,7 @@ jobs:
         run: |
           set -e
 
+          echo ""
           echo "=================================================="
           echo "CLOUDSTREAM API"
           echo "=================================================="
@@ -179,9 +205,8 @@ jobs:
             2>/dev/null \
             | head -100
 
-
       # ============================================================
-      # 7. DEPENDENCY KONTROLÜ
+      # DEPENDENCIES
       # ============================================================
 
       - name: Gradle dependency kontrolü
@@ -189,6 +214,7 @@ jobs:
         run: |
           set -e
 
+          echo ""
           echo "=================================================="
           echo "DEPENDENCIES"
           echo "=================================================="
@@ -199,16 +225,16 @@ jobs:
             --no-daemon \
             --stacktrace
 
-
       # ============================================================
-      # 8. TEMİZ DERLEME
+      # CLEAN
       # ============================================================
 
-      - name: Temiz derleme
+      - name: Temizle
         shell: bash
         run: |
           set -e
 
+          echo ""
           echo "=================================================="
           echo "CLEAN"
           echo "=================================================="
@@ -217,6 +243,15 @@ jobs:
             clean \
             --no-daemon \
             --stacktrace
+
+      # ============================================================
+      # BUILD
+      # ============================================================
+
+      - name: Eklentiyi derle
+        shell: bash
+        run: |
+          set -e
 
           echo ""
           echo "=================================================="
@@ -228,9 +263,8 @@ jobs:
             --no-daemon \
             --stacktrace
 
-
       # ============================================================
-      # 9. PLUGINS.JSON
+      # PLUGINS JSON
       # ============================================================
 
       - name: plugins.json üret
@@ -238,6 +272,7 @@ jobs:
         run: |
           set -e
 
+          echo ""
           echo "=================================================="
           echo "PLUGINS.JSON"
           echo "=================================================="
@@ -247,9 +282,8 @@ jobs:
             --no-daemon \
             --stacktrace
 
-
       # ============================================================
-      # 10. BUILD DOSYALARINI TOPLA
+      # OUTPUT
       # ============================================================
 
       - name: Derlenen dosyaları hazırla
@@ -257,12 +291,12 @@ jobs:
         run: |
           set -e
 
+          echo ""
           echo "=================================================="
           echo "BUILD ÇIKTILARI"
           echo "=================================================="
 
           rm -rf /tmp/cs-out
-
           mkdir -p /tmp/cs-out
 
           find . \
@@ -276,19 +310,16 @@ jobs:
 
           echo ""
           echo "Üretilen dosyalar:"
-
           ls -lah /tmp/cs-out
 
-          echo ""
-
           if [ -z "$(find /tmp/cs-out -maxdepth 1 -type f -print -quit)" ]; then
-            echo "HATA: Hiçbir .cs3 veya plugins.json oluşmadı."
+            echo ""
+            echo "HATA: .cs3 veya plugins.json oluşturulmadı."
             exit 1
           fi
 
-
       # ============================================================
-      # 11. BUILDS BRANCH
+      # BUILDS BRANCH
       # ============================================================
 
       - name: Builds branch'ine yayınla
@@ -296,6 +327,7 @@ jobs:
         run: |
           set -e
 
+          echo ""
           echo "=================================================="
           echo "BUILDS BRANCH YAYINI"
           echo "=================================================="
@@ -325,3 +357,6 @@ jobs:
           echo "=================================================="
           echo "YAYIN BAŞARILI"
           echo "=================================================="
+
+
+

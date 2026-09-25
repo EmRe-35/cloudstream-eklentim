@@ -1,5 +1,6 @@
 import com.android.build.gradle.BaseExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+import org.gradle.api.artifacts.dsl.DependencyHandler
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
@@ -13,14 +14,8 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-
-        classpath(
-            "com.lagradost.cloudstream3:gradle:local-SNAPSHOT"
-        )
-
-        classpath(
-            "org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0"
-        )
+        classpath("com.lagradost.cloudstream3:gradle:local-SNAPSHOT")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
 
@@ -50,7 +45,6 @@ fun Project.android(
 }
 
 subprojects {
-
     apply(plugin = "com.android.library")
     apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
@@ -63,7 +57,6 @@ subprojects {
     }
 
     android {
-
         namespace = "com.example"
 
         defaultConfig {
@@ -78,12 +71,8 @@ subprojects {
         }
 
         tasks.withType<KotlinJvmCompile> {
-
             compilerOptions {
-
-                jvmTarget.set(
-                    JvmTarget.JVM_1_8
-                )
+                jvmTarget.set(JvmTarget.JVM_1_8)
 
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
@@ -96,45 +85,30 @@ subprojects {
     }
 
     dependencies {
-
-        /*
-         * ============================================================
-         * CLOUDSTREAM API
-         * ============================================================
-         *
-         * Bu configuration CloudStream Gradle plugini tarafından
-         * oluşturuluyor.
-         *
-         * MainAPI, TvType, ExtractorLink, Plugin vb. buradan gelir.
-         */
-
         val cloudstream by configurations
 
         cloudstream(
             "com.lagradost:cloudstream3:pre-release"
         )
 
-        /*
-         * ============================================================
-         * NORMAL DEPENDENCIES
-         * ============================================================
-         */
-
-        implementation(
+        add(
+            "implementation",
             kotlin("stdlib")
         )
 
-        implementation(
+        add(
+            "implementation",
             "com.github.Blatzar:NiceHttp:0.4.11"
         )
 
-        implementation(
+        add(
+            "implementation",
             "org.jsoup:jsoup:1.18.3"
         )
 
-        implementation(
-            "com.fasterxml.jackson.module:" +
-                "jackson-module-kotlin:2.13.1"
+        add(
+            "implementation",
+            "com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1"
         )
     }
 }

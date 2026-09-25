@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 buildscript {
     repositories {
+        mavenLocal()
         google()
         mavenCentral()
         maven("https://jitpack.io")
@@ -12,13 +13,22 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
+
+        // CloudStream Gradle plugin artık JitPack'ten alınmıyor.
+        // GitHub Actions workflow'u plugin'i Maven Local'a kuruyor.
+        classpath(
+            "com.lagradost.cloudstream3:gradle:local-SNAPSHOT"
+        )
+
+        classpath(
+            "org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0"
+        )
     }
 }
 
 allprojects {
     repositories {
+        mavenLocal()
         google()
         mavenCentral()
         maven("https://jitpack.io")
@@ -87,7 +97,9 @@ subprojects {
             "com.lagradost:cloudstream3:pre-release"
         )
 
-        implementation(kotlin("stdlib"))
+        implementation(
+            kotlin("stdlib")
+        )
 
         implementation(
             "com.github.Blatzar:NiceHttp:0.4.11"

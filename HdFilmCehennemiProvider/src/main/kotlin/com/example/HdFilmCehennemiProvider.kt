@@ -2039,30 +2039,57 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ========================================================
              */
 
-            callback(
-    newExtractorLink(
-        source = this.name,
-        name =
-            if (isRapidrame) {
-                "Rapidrame HLS"
-            } else {
-                "HDFilmCehennemi HLS"
-            },
-        url = resolvedVideoUrl,
-        type = ExtractorLinkType.M3U8
-    ) {
-        referer = streamReferer
-        quality = Qualities.Unknown.value
+            val streamHeaders =
+    mapOf(
+        "User-Agent" to userAgent,
+        "Referer" to streamReferer,
+        "Origin" to streamOrigin,
+        "Accept" to "*/*"
+    )
 
-        this.headers =
-            mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to streamReferer,
-                "Origin" to streamOrigin,
-                "Accept" to "*/*"
+try {
+
+    M3u8Helper
+        .generateM3u8(
+            name =
+                if (isRapidrame) {
+                    "Rapidrame HLS"
+                } else {
+                    "HDFilmCehennemi HLS"
+                },
+            streamUrl = resolvedVideoUrl,
+            referer = streamReferer,
+            headers = streamHeaders
+        )
+        .forEach { extractorLink ->
+
+            callback(
+                extractorLink
             )
-    }
-)
+        }
+
+} catch (error: Exception) {
+
+    println(
+        "HDFilmCehennemi: M3U8 generate hatası -> " +
+            "${error::class.simpleName}: " +
+            error.message
+    )
+
+    callback(
+        newExtractorLink(
+            source = this.name,
+            name =
+                if (isRapidrame) {
+                    "Rapidrame HLS"
+                } else {
+                    "HDFilmCehennemi HLS"
+                },
+            url = resolvedVideoUrl,
+            type = ExtractorLinkType.M3U8
+        )
+    )
+}
 
             true
 

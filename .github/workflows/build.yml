@@ -98,21 +98,15 @@ jobs:
 
           echo ""
           echo "=================================================="
-          echo "source = this.name KONTROLÜ"
-          echo "=================================================="
-
-          SOURCE_COUNT=$(grep -c "source = this.name" "$PROVIDER" || true)
-
-          echo "Bulunan source = this.name sayısı: $SOURCE_COUNT"
-
-          if [ "$SOURCE_COUNT" -eq 0 ]; then
-            echo ""
-            echo "HATA:"
-            echo "Provider dosyasında source = this.name bulunamadı."
-            echo ""
-            echo "Actions yanlış/eski provider dosyasını derliyor."
-            exit 1
+          echo "newExtractorLink KONTROLÜ"
+          NEW_EXTRACTOR_COUNT=$(grep -c "newExtractorLink" "$PROVIDER" || true)
+          echo "Bulunan newExtractorLink sayısı: $NEW_EXTRACTOR_COUNT"
+    if [ "$NEW_EXTRACTOR_COUNT" -ne 0 ]; then
+          echo "HATA: Provider içinde newExtractorLink çağrısı bulundu."
+          exit 1
           fi
+
+          echo "OK: newExtractorLink çağrısı yok."
 
           echo ""
           echo "OK: source = this.name mevcut."

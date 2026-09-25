@@ -5,36 +5,51 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
   workflow_dispatch:
 
 jobs:
+
   build:
+
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Kodu çek
         uses: actions/checkout@v4
+
         with:
           fetch-depth: 0
 
       - name: JDK kur
         uses: actions/setup-java@v4
+
         with:
-          distribution: "temurin"
+          distribution: temurin
           java-version: "17"
 
       - name: Gradle 8.9 kur
         uses: gradle/actions/setup-gradle@v3
+
         with:
           gradle-version: "8.9"
 
-      # CloudStream Gradle pluginini JitPack yerine
-      # doğrudan GitHub kaynak kodundan derleyip
-      # Maven Local'a kuruyoruz.
       - name: CloudStream Gradle pluginini hazırla
+        shell: bash
+
         run: |
-          git clone --depth 1 \
+
+          set -e
+
+          echo "CloudStream Gradle plugin klonlanıyor..."
+
+          rm -rf /tmp/cloudstream-gradle
+
+          git clone \
+            --depth 1 \
             https://github.com/recloudstream/gradle.git \
             /tmp/cloudstream-gradle
 
@@ -42,19 +57,80 @@ jobs:
 
           chmod +x gradlew
 
-          ./gradlew publishToMavenLocal --no-daemon
+          echo "CloudStream Gradle plugin derleniyor..."
 
-      # Artık root build.gradle.kts,
-      # com.lagradost.cloudstream3:gradle:local-SNAPSHOT
-      # dependency'sini Maven Local'dan bulabilecek.
-      - name: Eklentileri derle (.cs3 üretir)
-        run: gradle make --no-daemon
+          ./gradlew \
+            publishToMavenLocal \
+            --no-daemon \
+            --stacktrace
+
+          echo "Maven Local içeriği:"
+
+          find ~/.m2/repository/com/lagradost/cloudstream3 \
+            -maxdepth 5 \
+            -type f \
+            2>/dev/null || true
+
+      - name: CloudStream API kontrolü
+        shell: bash
+
+        run: |
+
+          set -e
+
+          echo "CloudStream API aranıyor..."
+
+          find ~/.m2/repository \
+            -path "*cloudstream3*" \
+            -type f \
+            | head -100
+
+      - name: Gradle dependency kontrolü
+        shell: bash
+
+        run: |
+
+          set -e
+
+          gradle \
+            :HdFilmCehennemiProvider:dependencies \
+            --configuration debugCompileClasspath \
+            --no-daemon \
+            --stacktrace
+
+      - name: Eklentileri derle
+        shell: bash
+
+        run: |
+
+          set -e
+
+          gradle \
+            make \
+            --no-daemon \
+            --stacktrace
 
       - name: plugins.json üret
-        run: gradle makePluginsJson --no-daemon
+        shell: bash
 
-      - name: Derlenen dosyaları 'builds' branch'ine yayınla
         run: |
+
+          set -e
+
+          gradle \
+            makePluginsJson \
+            --no-daemon \
+            --stacktrace
+
+      - name: Derlenen dosyaları hazırla
+        shell: bash
+
+        run: |
+
+          set -e
+
+          rm -rf /tmp/cs-out
+
           mkdir -p /tmp/cs-out
 
           find . \
@@ -66,8 +142,28 @@ jobs:
             -not -path "*/node_modules/*" \
             -exec cp {} /tmp/cs-out/ \;
 
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
+          echo "Üretilen dosyalar:"
+
+          ls -lah /tmp/cs-out
+
+      - name: Builds branch'ine yayınla
+        shell: bash
+
+        run: |
+
+          set -e
+
+          cd /tmp/cs-out
+
+          if [ -z "$(find . -maxdepth 1 -type f -print -quit)" ]; then
+            echo "HATA: .cs3 veya plugins.json oluşturulmadı."
+            exit 1
+          fi
+
+          cd "$GITHUB_WORKSPACE"
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
 
           git checkout --orphan builds-temp
 
@@ -81,6 +177,6 @@ jobs:
             -m "Otomatik derleme: ${{ github.sha }}"
 
           git push \
-            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
             builds-temp:builds \
             --force

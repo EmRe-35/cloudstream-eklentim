@@ -15,9 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # ============================================================
-      # KODU ÇEK
+      # 1. KODU ÇEK
       # ============================================================
+
       - name: Kodu çek
         uses: actions/checkout@v4
         with:
@@ -25,98 +27,114 @@ jobs:
           ref: ${{ github.sha }}
 
       # ============================================================
-      # GERÇEK COMMIT VE DOSYA KONTROLÜ
+      # 2. CHECKOUT KONTROLÜ
       # ============================================================
-      - name: Kaynak kodu doğrula
+
+      - name: Kaynak kodu kesin olarak kontrol et
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "GERÇEK CHECKOUT EDİLEN COMMIT"
-          echo "=========================================="
+          PROVIDER="HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt"
 
-          git rev-parse HEAD
+          echo "=================================================="
+          echo "CHECKOUT KONTROLÜ"
+          echo "=================================================="
 
           echo ""
-          echo "=========================================="
-          echo "ACTIONS COMMIT"
-          echo "=========================================="
-
+          echo "GitHub Actions SHA:"
           echo "${{ github.sha }}"
 
           echo ""
-          echo "=========================================="
-          echo "BRANCH"
-          echo "=========================================="
+          echo "Checkout edilen SHA:"
+          git rev-parse HEAD
 
+          echo ""
+          echo "Branch:"
           git branch --show-current || true
 
           echo ""
-          echo "=========================================="
-          echo "PROVIDER DOSYA SATIR SAYISI"
-          echo "=========================================="
+          echo "Provider:"
+          echo "$PROVIDER"
 
-          wc -l \
-            HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt
-
-          echo ""
-          echo "=========================================="
-          echo "PROVIDER DOSYASI"
-          echo "=========================================="
-
-          ls -lah \
-            HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt
+          if [ ! -f "$PROVIDER" ]; then
+            echo ""
+            echo "HATA: Provider dosyası bulunamadı!"
+            exit 1
+          fi
 
           echo ""
-          echo "=========================================="
-          echo "2040-2070 ARASI"
-          echo "=========================================="
-
-          nl -ba \
-            HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt \
-            | sed -n '2040,2070p'
+          echo "Provider satır sayısı:"
+          wc -l "$PROVIDER"
 
           echo ""
-          echo "=========================================="
-          echo "TÜM newExtractorLink ÇAĞRILARI"
-          echo "=========================================="
+          echo "=================================================="
+          echo "newExtractorLink KONTROLÜ"
+          echo "=================================================="
 
-          grep -n \
-            -B5 \
-            -A12 \
-            "newExtractorLink" \
-            HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt \
-            || true
+          grep -n -B5 -A10 "newExtractorLink" "$PROVIDER" || true
+
+          echo ""
+          echo "=================================================="
+          echo "SOURCE PARAMETRESİ KONTROLÜ"
+          echo "=================================================="
+
+          if grep -q "source = this.name" "$PROVIDER"; then
+            echo "OK: source = this.name bulundu."
+          else
+            echo ""
+            echo "HATA: source = this.name bulunamadı!"
+            echo ""
+            echo "Actions yanlış/eski provider dosyasını derliyor."
+            exit 1
+          fi
+
+          echo ""
+          echo "=================================================="
+          echo "PROVIDER SON 150 SATIR"
+          echo "=================================================="
+
+          tail -n 150 "$PROVIDER"
+
+          echo ""
+          echo "=================================================="
+          echo "KAYNAK KOD KONTROLÜ TAMAMLANDI"
+          echo "=================================================="
+
 
       # ============================================================
-      # JDK
+      # 3. JDK
       # ============================================================
+
       - name: JDK kur
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+
       # ============================================================
-      # GRADLE
+      # 4. GRADLE
       # ============================================================
+
       - name: Gradle 8.9 kur
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: "8.9"
 
+
       # ============================================================
-      # CLOUDSTREAM GRADLE PLUGIN
+      # 5. CLOUDSTREAM GRADLE PLUGIN
       # ============================================================
+
       - name: CloudStream Gradle pluginini hazırla
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
+          echo "=================================================="
           echo "CLOUDSTREAM GRADLE PLUGIN"
-          echo "=========================================="
+          echo "=================================================="
 
           rm -rf /tmp/cloudstream-gradle
 
@@ -129,35 +147,31 @@ jobs:
 
           chmod +x gradlew
 
-          echo ""
-          echo "CloudStream Gradle plugin derleniyor..."
-
           ./gradlew \
             publishToMavenLocal \
             --no-daemon \
             --stacktrace
 
           echo ""
-          echo "=========================================="
-          echo "MAVEN LOCAL CLOUDSTREAM DOSYALARI"
-          echo "=========================================="
+          echo "Maven Local CloudStream dosyaları:"
 
           find "$HOME/.m2/repository/com/lagradost/cloudstream3" \
-            -maxdepth 6 \
             -type f \
             2>/dev/null || true
 
+
       # ============================================================
-      # CLOUDSTREAM API KONTROL
+      # 6. CLOUDSTREAM API KONTROLÜ
       # ============================================================
+
       - name: CloudStream API kontrolü
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
+          echo "=================================================="
           echo "CLOUDSTREAM API"
-          echo "=========================================="
+          echo "=================================================="
 
           find "$HOME/.m2/repository" \
             -path "*cloudstream3*" \
@@ -165,17 +179,19 @@ jobs:
             2>/dev/null \
             | head -100
 
+
       # ============================================================
-      # GRADLE DEPENDENCY KONTROL
+      # 7. DEPENDENCY KONTROLÜ
       # ============================================================
+
       - name: Gradle dependency kontrolü
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "DEPENDENCY KONTROLÜ"
-          echo "=========================================="
+          echo "=================================================="
+          echo "DEPENDENCIES"
+          echo "=================================================="
 
           gradle \
             :HdFilmCehennemiProvider:dependencies \
@@ -183,53 +199,70 @@ jobs:
             --no-daemon \
             --stacktrace
 
+
       # ============================================================
-      # DERLEME
+      # 8. TEMİZ DERLEME
       # ============================================================
-      - name: Eklentileri derle
+
+      - name: Temiz derleme
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
+          echo "=================================================="
+          echo "CLEAN"
+          echo "=================================================="
+
+          gradle \
+            clean \
+            --no-daemon \
+            --stacktrace
+
+          echo ""
+          echo "=================================================="
           echo "EKLENTİ DERLEME BAŞLIYOR"
-          echo "=========================================="
+          echo "=================================================="
 
           gradle \
             make \
             --no-daemon \
             --stacktrace
 
+
       # ============================================================
-      # PLUGINS.JSON
+      # 9. PLUGINS.JSON
       # ============================================================
+
       - name: plugins.json üret
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
+          echo "=================================================="
           echo "PLUGINS.JSON"
-          echo "=========================================="
+          echo "=================================================="
 
           gradle \
             makePluginsJson \
             --no-daemon \
             --stacktrace
 
+
       # ============================================================
-      # BUILD ÇIKTILARINI TOPLA
+      # 10. BUILD DOSYALARINI TOPLA
       # ============================================================
+
       - name: Derlenen dosyaları hazırla
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
+          echo "=================================================="
           echo "BUILD ÇIKTILARI"
-          echo "=========================================="
+          echo "=================================================="
 
           rm -rf /tmp/cs-out
+
           mkdir -p /tmp/cs-out
 
           find . \
@@ -246,22 +279,26 @@ jobs:
 
           ls -lah /tmp/cs-out
 
+          echo ""
+
+          if [ -z "$(find /tmp/cs-out -maxdepth 1 -type f -print -quit)" ]; then
+            echo "HATA: Hiçbir .cs3 veya plugins.json oluşmadı."
+            exit 1
+          fi
+
+
       # ============================================================
-      # BUILDS BRANCH
+      # 11. BUILDS BRANCH
       # ============================================================
+
       - name: Builds branch'ine yayınla
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "YAYINLAMA"
-          echo "=========================================="
-
-          if [ -z "$(find /tmp/cs-out -maxdepth 1 -type f -print -quit)" ]; then
-            echo "HATA: .cs3 veya plugins.json oluşturulmadı."
-            exit 1
-          fi
+          echo "=================================================="
+          echo "BUILDS BRANCH YAYINI"
+          echo "=================================================="
 
           cd "$GITHUB_WORKSPACE"
 
@@ -285,6 +322,6 @@ jobs:
             --force
 
           echo ""
-          echo "=========================================="
-          echo "YAYINLAMA TAMAMLANDI"
-          echo "=========================================="
+          echo "=================================================="
+          echo "YAYIN BAŞARILI"
+          echo "=================================================="

@@ -14,8 +14,6 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
 
-        // CloudStream Gradle plugin artık JitPack'ten alınmıyor.
-        // GitHub Actions workflow'u plugin'i Maven Local'a kuruyor.
         classpath(
             "com.lagradost.cloudstream3:gradle:local-SNAPSHOT"
         )
@@ -91,11 +89,9 @@ subprojects {
     }
 
     dependencies {
-        val cloudstream by configurations
-
-        cloudstream(
-            "com.lagradost:cloudstream3:pre-release"
-        )
+        // ÖNEMLİ:
+        // implementation configuration'ını subproject içinden alıyoruz.
+        val implementation by configurations
 
         implementation(
             kotlin("stdlib")

@@ -2078,16 +2078,11 @@ try {
 
     callback(
         newExtractorLink(
-            source = this.name,
-            name =
-                if (isRapidrame) {
-                    "Rapidrame HLS"
-                } else {
-                    "HDFilmCehennemi HLS"
-                },
-            url = resolvedVideoUrl,
-            type = ExtractorLinkType.M3U8
-        )
+    source = this.name,
+    name = if (isRapidrame) "Rapidrame HLS" else "HDFilmCehennemi HLS",
+    url = resolvedVideoUrl,
+    type = ExtractorLinkType.M3U8
+)
     )
 }
 

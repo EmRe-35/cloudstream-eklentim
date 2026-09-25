@@ -2040,33 +2040,29 @@ class HdFilmCehennemiProvider : MainAPI() {
              */
 
             callback(
-                newExtractorLink(
-                    source = this.name,
-                    name =
-                        if (isRapidrame) {
-                            "Rapidrame HLS"
-                        } else {
-                            "HDFilmCehennemi HLS"
-                        },
-                    url = resolvedVideoUrl,
-                    type = ExtractorLinkType.M3U8
-                ) {
+    newExtractorLink(
+        source = this.name,
+        name =
+            if (isRapidrame) {
+                "Rapidrame HLS"
+            } else {
+                "HDFilmCehennemi HLS"
+            },
+        url = resolvedVideoUrl,
+        type = ExtractorLinkType.M3U8
+    ) {
+        referer = streamReferer
+        quality = Qualities.Unknown.value
 
-                    referer =
-                        streamReferer
-
-                    quality =
-                        Qualities.Unknown.value
-
-                    headers =
-                        mapOf(
-                            "User-Agent" to userAgent,
-                            "Referer" to streamReferer,
-                            "Origin" to streamOrigin,
-                            "Accept" to "*/*"
-                        )
-                }
+        this.headers =
+            mapOf(
+                "User-Agent" to userAgent,
+                "Referer" to streamReferer,
+                "Origin" to streamOrigin,
+                "Accept" to "*/*"
             )
+    }
+)
 
             true
 

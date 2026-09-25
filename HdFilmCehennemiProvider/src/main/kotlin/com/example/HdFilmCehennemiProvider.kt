@@ -2059,7 +2059,8 @@ try {
                 },
             streamUrl = resolvedVideoUrl,
             referer = streamReferer,
-            headers = streamHeaders
+            headers = streamHeaders,
+            source = this.name
         )
         .forEach { extractorLink ->
 

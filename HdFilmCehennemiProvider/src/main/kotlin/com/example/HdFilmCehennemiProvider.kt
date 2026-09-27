@@ -1456,6 +1456,145 @@ class HdFilmCehennemiProvider : MainAPI() {
                     val html =
                         response.text
 
+                    println(
+                        "HDFilmCehennemi: iframe HTTP -> " +
+                            response.code +
+                            " | bytes=" +
+                            html.length +
+                            " | url=" +
+                            iframeUrl
+                    )
+
+                    /*
+                     * ------------------------------------------------
+                     * RPLAYER TEŞHİSİ
+                     *
+                     * Güncel sitede /video/{id}/ endpoint'i gerçek
+                     * iframe'i /rplayer/{token}/ olarak döndürüyor.
+                     * Bu sayfanın video adresi doğrudan HTML'de olmayabilir;
+                     * JS/player config içinden üretilebilir.
+                     * ------------------------------------------------
+                     */
+
+                    if (iframeIsRapid) {
+
+                        val previewLength =
+                            minOf(
+                                html.length,
+                                5000
+                            )
+
+                        println(
+                            "HDFilmCehennemi: RPLAYER HTML[0..$previewLength] -> " +
+                                html.take(previewLength)
+                                    .replace("\\n", " ")
+                                    .replace("\\r", " ")
+                                    .replace(Regex("\\s+"), " ")
+                        )
+
+                        val playerDocument =
+                            org.jsoup.Jsoup.parse(
+                                html,
+                                iframeUrl
+                            )
+
+                        val sourceElements =
+                            playerDocument.select(
+                                "video source[src], video[src], source[src], " +
+                                    "[data-src], [data-file], [data-url], " +
+                                    "[data-video], [data-stream]"
+                            )
+
+                        println(
+                            "HDFilmCehennemi: RPLAYER aday element sayısı = " +
+                                sourceElements.size
+                        )
+
+                        sourceElements
+                            .take(30)
+                            .forEach { element ->
+
+                                println(
+                                    "HDFilmCehennemi: RPLAYER element -> " +
+                                        element.tagName() +
+                                        " | src=" +
+                                        element.attr("src") +
+                                        " | data-src=" +
+                                        element.attr("data-src") +
+                                        " | data-file=" +
+                                        element.attr("data-file") +
+                                        " | data-url=" +
+                                        element.attr("data-url") +
+                                        " | data-video=" +
+                                        element.attr("data-video") +
+                                        " | data-stream=" +
+                                        element.attr("data-stream")
+                                )
+                            }
+
+                        val interestingScripts =
+                            playerDocument
+                                .select("script")
+                                .mapNotNull { script ->
+                                    val scriptText =
+                                        script.data()
+                                            .ifBlank { script.html() }
+
+                                    if (
+                                        Regex(
+                                            """(?i)(m3u8|master\.txt|\.mp4|playmix|jwplayer|videojs|sources|file\s*:|source\s*:|player)"""
+                                        ).containsMatchIn(
+                                            scriptText
+                                        )
+                                    ) {
+                                        scriptText
+                                    } else {
+                                        null
+                                    }
+                                }
+
+                        println(
+                            "HDFilmCehennemi: RPLAYER ilginç script sayısı = " +
+                                interestingScripts.size
+                        )
+
+                        interestingScripts
+                            .take(20)
+                            .forEachIndexed { index, scriptText ->
+
+                                println(
+                                    "HDFilmCehennemi: RPLAYER SCRIPT[$index] -> " +
+                                        scriptText
+                                            .take(5000)
+                                            .replace("\\n", " ")
+                                            .replace("\\r", " ")
+                                            .replace(Regex("\\s+"), " ")
+                                )
+                            }
+
+                        val urlCandidates =
+                            Regex(
+                                """https?://[^\s"'<>\\]+"""
+                            )
+                                .findAll(html)
+                                .map { it.value }
+                                .distinct()
+                                .take(100)
+                                .toList()
+
+                        println(
+                            "HDFilmCehennemi: RPLAYER URL adayları = " +
+                                urlCandidates.size
+                        )
+
+                        urlCandidates.forEach { candidate ->
+                            println(
+                                "HDFilmCehennemi: RPLAYER URL -> " +
+                                    candidate
+                            )
+                        }
+                    }
+
                     if (html.isBlank()) {
                         return null
                     }

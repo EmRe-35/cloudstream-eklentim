@@ -687,6 +687,12 @@ class HdFilmCehennemiProvider : MainAPI() {
                             value.contains(
                                 ".mp4",
                                 ignoreCase = true
+                            ) ||
+                            (
+                                value.contains(
+                                    "hdfilmcehennemi.download/download/",
+                                    ignoreCase = true
+                                )
                             )
                         )
             }
@@ -1406,6 +1412,191 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ========================================================
+             * RAPIDRAME DOWNLOAD ÇÖZÜCÜ
+             *
+             * Güncel RPLAYER sayfasında gerçek filme ait kimlik:
+             *   /rplayer/{id}/
+             *
+             * Aynı kimlik download sunucusunda:
+             *   https://hdfilmcehennemi.download/download/{id}
+             *
+             * Önceki sürüm bu adresi sadece logluyordu ve daha sonra
+             * stale bir playmix master.txt adresine düşüyordu. Burada
+             * redirect zincirini, m3u8 cevabını ve HTML/JSON içindeki
+             * gerçek medya URL'sini doğrudan çözüyoruz.
+             * ========================================================
+             */
+
+            suspend fun resolveRapidDownload(
+                rapidIframeUrl: String
+            ): String? {
+
+                val rapidId =
+                    Regex(
+                        """/rplayer/([^/?#]+)""",
+                        setOf(RegexOption.IGNORE_CASE)
+                    )
+                        .find(rapidIframeUrl)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.trim()
+
+                if (rapidId.isNullOrBlank()) {
+                    println(
+                        "HDFilmCehennemi: Rapidrame ID bulunamadı -> $rapidIframeUrl"
+                    )
+                    return null
+                }
+
+                var currentUrl =
+                    "https://hdfilmcehennemi.download/download/$rapidId"
+
+                val visited = mutableSetOf<String>()
+
+                repeat(8) {
+
+                    if (!visited.add(currentUrl)) {
+                        return@repeat
+                    }
+
+                    try {
+                        val response =
+                            app.get(
+                                currentUrl,
+                                allowRedirects = false,
+                                headers = mapOf(
+                                    "User-Agent" to userAgent,
+                                    "Accept" to "*/*",
+                                    "Referer" to rapidIframeUrl
+                                )
+                            )
+
+                        val location =
+                            response.headers["Location"]
+                                ?.trim()
+                                ?.takeIf { it.isNotBlank() }
+
+                        val contentType =
+                            response.headers["Content-Type"]
+                                ?.trim()
+                                .orEmpty()
+
+                        println(
+                            "HDFilmCehennemi: RAPID DOWNLOAD -> " +
+                                "status=${response.code} | " +
+                                "type=$contentType | " +
+                                "location=$location | url=$currentUrl"
+                        )
+
+                        if (location != null) {
+                            val nextUrl =
+                                try {
+                                    URI(currentUrl)
+                                        .resolve(location)
+                                        .toString()
+                                } catch (_: Exception) {
+                                    location
+                                }
+
+                            val cleanedNext =
+                                cleanVideoUrl(nextUrl)
+
+                            if (
+                                isValidVideoUrl(cleanedNext) &&
+                                    !cleanedNext!!.contains(
+                                        "master.txt",
+                                        ignoreCase = true
+                                    )
+                            ) {
+                                println(
+                                    "HDFilmCehennemi: RAPID DOWNLOAD REDIRECT MEDYA -> $cleanedNext"
+                                )
+                                return cleanedNext
+                            }
+
+                            if (!cleanedNext.isNullOrBlank()) {
+                                currentUrl = cleanedNext
+                                continue
+                            }
+                        }
+
+                        if (
+                            response.code in 200..299 &&
+                                (
+                                    contentType.contains("video/", ignoreCase = true) ||
+                                        contentType.contains("mpegurl", ignoreCase = true) ||
+                                        contentType.contains("m3u8", ignoreCase = true)
+                                    )
+                        ) {
+                            val bodyUrl =
+                                cleanVideoUrl(currentUrl)
+
+                            if (
+                                bodyUrl != null &&
+                                    !bodyUrl.contains("master.txt", ignoreCase = true)
+                            ) {
+                                println(
+                                    "HDFilmCehennemi: RAPID DOWNLOAD DOĞRUDAN MEDYA -> $bodyUrl"
+                                )
+                                return bodyUrl
+                            }
+                        }
+
+                        if (response.code in 200..299) {
+                            val body =
+                                response.text
+
+                            findVideoUrlInText(body)?.let { found ->
+                                if (!found.contains("master.txt", ignoreCase = true)) {
+                                    println(
+                                        "HDFilmCehennemi: RAPID DOWNLOAD BODY M3U8 -> $found"
+                                    )
+                                    return found
+                                }
+                            }
+
+                            val genericUrl =
+                                Regex(
+                                    """https?://[^"'`<>\s\]+(?:\.mp4(?:\?[^"'`<>\s\]*)?|/hls/[^"'`<>\s\]+)""",
+                                    setOf(RegexOption.IGNORE_CASE)
+                                )
+                                    .find(body)
+                                    ?.value
+                                    ?.let { cleanVideoUrl(it) }
+
+                            if (
+                                isValidVideoUrl(genericUrl) &&
+                                    !genericUrl!!.contains("master.txt", ignoreCase = true)
+                            ) {
+                                println(
+                                    "HDFilmCehennemi: RAPID DOWNLOAD BODY MEDYA -> $genericUrl"
+                                )
+                                return genericUrl
+                            }
+                        }
+
+                        if (response.code !in 300..399) {
+                            return@repeat
+                        }
+
+                    } catch (error: Exception) {
+                        println(
+                            "HDFilmCehennemi: RAPID DOWNLOAD hata -> " +
+                                "${error::class.simpleName}: ${error.message}"
+                        )
+                        return@repeat
+                    }
+                }
+
+                println(
+                    "HDFilmCehennemi: RAPID DOWNLOAD gerçek medya bulunamadı -> $rapidIframeUrl"
+                )
+
+                return null
+            }
+
+            /*
+             * ========================================================
              * IFRAME SCRAPER
              * ========================================================
              */
@@ -1984,7 +2175,27 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                     /*
                      * ------------------------------------------------
-                     * 1. Doğrudan M3U8
+                     * 1. RAPIDRAME DOWNLOAD ENDPOINT
+                     * ------------------------------------------------
+                     *
+                     * Önce film kimliğine bağlı download endpoint'ini
+                     * çöz. Böylece aşağıdaki genel HTML/decoder taraması
+                     * stale master.txt seçse bile gerçek kaynak öncelikli
+                     * olur.
+                     */
+
+                    if (iframeIsRapid) {
+                        resolveRapidDownload(iframeUrl)?.let {
+                            println(
+                                "HDFilmCehennemi: Rapidrame gerçek video bulundu -> $it"
+                            )
+                            return it
+                        }
+                    }
+
+                    /*
+                     * ------------------------------------------------
+                     * 2. Doğrudan M3U8
                      * ------------------------------------------------
                      */
 

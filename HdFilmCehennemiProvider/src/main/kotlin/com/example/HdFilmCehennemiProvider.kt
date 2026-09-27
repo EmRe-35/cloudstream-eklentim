@@ -1447,6 +1447,71 @@ class HdFilmCehennemiProvider : MainAPI() {
                 }
             }
 
+            fun logLargeScript(tag: String, script: String, chunkSize: Int = 3000) {
+                if (script.isBlank()) return
+
+                val chunks = script.chunked(chunkSize)
+
+                chunks.forEachIndexed { chunkIndex, chunk ->
+                    println(
+                        "HDFilmCehennemi: $tag[$chunkIndex/${chunks.size}] -> " +
+                            chunk
+                                .replace("\\n", " ")
+                                .replace("\\r", " ")
+                                .replace(Regex("\\\\s+"), " ")
+                    )
+                }
+            }
+
+            fun logTargetContext(
+                tag: String,
+                script: String,
+                keyword: String,
+                before: Int = 1800,
+                after: Int = 5000
+            ) {
+                var from = 0
+                var count = 0
+
+                while (count < 20) {
+                    val position =
+                        script.indexOf(
+                            keyword,
+                            from,
+                            ignoreCase = true
+                        )
+
+                    if (position < 0) break
+
+                    val start =
+                        maxOf(
+                            0,
+                            position - before
+                        )
+
+                    val end =
+                        minOf(
+                            script.length,
+                            position + after
+                        )
+
+                    println(
+                        "HDFilmCehennemi: $tag[$keyword][$count] -> " +
+                            script
+                                .substring(start, end)
+                                .replace("\\n", " ")
+                                .replace("\\r", " ")
+                                .replace(Regex("\\\\s+"), " ")
+                    )
+
+                    from =
+                        position +
+                            keyword.length
+
+                    count++
+                }
+            }
+
             fun logPackedDecode(script: String, index: Int) {
                 val decoded = unpackPackedJavaScript(script)
                 if (decoded.isNullOrBlank()) {
@@ -1522,10 +1587,96 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                     println("HDFilmCehennemi: RPLAYER HAM SCRIPT SAYISI = ${rawScriptBlocks.size}")
                     rawScriptBlocks.forEachIndexed { scriptIndex, scriptBody ->
-                        val compact = scriptBody.replace("\\n", " ").replace("\\r", " ").replace(Regex("\\\\s+"), " ").trim()
-                        println("HDFilmCehennemi: HAM SCRIPT[$scriptIndex] bytes=${scriptBody.length} prefix=${compact.take(120)}")
-                        if (compact.contains("eval(function(p,a,c,k,e,d)") || compact.contains("rniq6")) {
-                            logPackedDecode(scriptBody, scriptIndex)
+                        val compact =
+                            scriptBody
+                                .replace("\\n", " ")
+                                .replace("\\r", " ")
+                                .replace(Regex("\\\\s+"), " ")
+                                .trim()
+
+                        println(
+                            "HDFilmCehennemi: HAM SCRIPT[$scriptIndex] " +
+                                "bytes=${scriptBody.length} " +
+                                "prefix=${compact.take(120)}"
+                        )
+
+                        /*
+                         * qqxl1 / kp0y zincirini özellikle yakala.
+                         *
+                         * Güncel RPLAYER'da player config:
+                         *     sources: [{file: qqxl1, type: "hls"}]
+                         *
+                         * qqxl1 ise başka bir inline script içinde
+                         * dinamik olarak üretiliyor.
+                         */
+                        val sourceChain =
+                            listOf(
+                                "qqxl1",
+                                "kp0y",
+                                "d366",
+                                "pmh25",
+                                "g275m"
+                            ).any {
+                                compact.contains(
+                                    it,
+                                    ignoreCase = false
+                                )
+                            }
+
+                        if (sourceChain) {
+                            println(
+                                "HDFilmCehennemi: RPLAYER SOURCE CHAIN " +
+                                    "SCRIPT[$scriptIndex] bytes=${scriptBody.length}"
+                            )
+
+                            listOf(
+                                "qqxl1",
+                                "kp0y",
+                                "d366",
+                                "pmh25",
+                                "g275m"
+                            ).forEach { keyword ->
+                                logTargetContext(
+                                    tag =
+                                        "RPLAYER SOURCE SCRIPT[$scriptIndex]",
+                                    script =
+                                        scriptBody,
+                                    keyword =
+                                        keyword
+                                )
+                            }
+
+                            /*
+                             * Script 9 gibi orta boy inline scriptlerde
+                             * bağlamın tamamını görmek için ayrıca parçalı
+                             * dump al.
+                             */
+                            if (
+                                scriptBody.length <= 20000 &&
+                                (
+                                    compact.contains("kp0y") ||
+                                    compact.contains("qqxl1")
+                                )
+                            ) {
+                                logLargeScript(
+                                    tag =
+                                        "RPLAYER SOURCE FULL[$scriptIndex]",
+                                    script =
+                                        scriptBody
+                                )
+                            }
+                        }
+
+                        if (
+                            compact.contains(
+                                "eval(function(p,a,c,k,e,d)"
+                            ) ||
+                            compact.contains("rniq6")
+                        ) {
+                            logPackedDecode(
+                                scriptBody,
+                                scriptIndex
+                            )
                         }
                     }
 

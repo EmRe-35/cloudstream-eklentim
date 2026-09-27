@@ -1664,17 +1664,40 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                                 val externalInteresting =
                                     Regex(
-                                        """(?i)(rt6|m3u8|master\.txt|playmix|jwplayer|sources|file\s*:)"""
+                                        """(?i)(rt6|m3u8|master\.txt|playmix|jwplayer|sources|file\s*:|fetch\s*\(|XMLHttpRequest|ajax|videoplayer|contentUrl|rapidrame)"""
                                     ).containsMatchIn(scriptBody)
 
                                 if (externalInteresting) {
-                                    println(
-                                        "HDFilmCehennemi: RPLAYER harici script ilginç -> " +
-                                            scriptBody.take(4000)
-                                                .replace("\n", " ")
-                                                .replace("\r", " ")
-                                                .replace(Regex("\\s+"), " ")
+                                    val keywords = listOf(
+                                        "rt6", "m3u8", "master.txt", "playmix", "jwplayer",
+                                        "sources", "fetch(", "XMLHttpRequest", "ajax", "videoplayer",
+                                        "contentUrl", "rapidrame"
                                     )
+
+                                    println(
+                                        "HDFilmCehennemi: RPLAYER HARICI SCRIPT ILGINC -> " +
+                                            scriptUrl
+                                    )
+
+                                    for (keyword in keywords) {
+                                        var from = 0
+                                        var count = 0
+                                        while (count < 20) {
+                                            val pos = scriptBody.indexOf(keyword, from, ignoreCase = true)
+                                            if (pos < 0) break
+                                            val start = maxOf(0, pos - 700)
+                                            val end = minOf(scriptBody.length, pos + 1400)
+                                            println(
+                                                "HDFilmCehennemi: RPLAYER KEYWORD[$keyword] -> " +
+                                                    scriptBody.substring(start, end)
+                                                        .replace("\n", " ")
+                                                        .replace("\r", " ")
+                                                        .replace(Regex("\\s+"), " ")
+                                            )
+                                            from = pos + keyword.length
+                                            count++
+                                        }
+                                    }
                                 }
                             } catch (error: Exception) {
                                 println(

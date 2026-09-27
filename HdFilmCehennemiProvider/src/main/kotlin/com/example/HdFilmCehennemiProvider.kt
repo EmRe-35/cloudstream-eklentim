@@ -1225,6 +1225,370 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ========================================================
              */
 
+
+            /*
+             * ========================================================
+             * CUSTOM RPLAYER ARRAY DECODER
+             * ========================================================
+             *
+             * Güncel hdfilmcehennemi.mobi player'ında unpack edilmiş
+             * script içinde şu yapıya rastlandı:
+             *
+             *   function vwt(jkg) { ... }
+             *   var p3k = vwt("...#...".split("#"));
+             *
+             * Bu ikinci katman klasik Dean-Edwards packer'dan ayrıdır.
+             * Logcat'te görülen örnekte; Base64, reverse, alfabetik
+             * kaydırma, deterministik shuffle ve rolling XOR uygulanıyor.
+             */
+            fun decodeRplayerArray(encoded: String): String? {
+                return try {
+                    val parts =
+                        encoded
+                            .split("#")
+                            .toMutableList()
+
+                    if (parts.size < 3) {
+                        return null
+                    }
+
+                    val zyt00 =
+                        parts.size - 2
+
+                    val azaw =
+                        zyt00 % 7
+
+                    val z66 =
+                        8 + (zyt00 % 5)
+
+                    if (
+                        azaw !in parts.indices ||
+                        z66 !in parts.indices
+                    ) {
+                        return null
+                    }
+
+                    val dauei =
+                        parts.removeAt(z66)
+
+                    val bprd =
+                        parts.removeAt(
+                            if (azaw < parts.size) {
+                                azaw
+                            } else {
+                                parts.lastIndex
+                            }
+                        )
+
+                    var dtn =
+                        parts.joinToString("")
+
+                    if (bprd.length > 4096) {
+                        dtn =
+                            base64Decode(
+                                dtn
+                            )
+                    }
+
+                    var p72 = 0
+                    var k04b = 0
+
+                    for (
+                        index in bprd.indices
+                    ) {
+                        val code =
+                            bprd[index].code
+
+                        p72 =
+                            (
+                                p72 * 37 +
+                                    code
+                                ) % 241
+
+                        k04b =
+                            (
+                                k04b +
+                                    (
+                                        (code shl 1) xor
+                                            index
+                                    )
+                                ) and 255
+                    }
+
+                    val td0 =
+                        (
+                            p72 * 3 +
+                                k04b
+                            ) % 256
+
+                    val ixs =
+                        (
+                            k04b % 11
+                        ) + 5
+
+                    var byo9b =
+                        (
+                            k04b * 251L +
+                                p72
+                            ) % 65519L +
+                                1L
+
+                    /*
+                     * JS:
+                     * for(n=dauei.length-1;n>=0;n--){
+                     *   ...
+                     * }
+                     */
+                    for (
+                        index in dauei.indices.reversed()
+                    ) {
+                        when (
+                            val marker =
+                                dauei[index]
+                        ) {
+                            '7' -> {
+                                dtn =
+                                    base64Decode(
+                                        dtn
+                                    )
+                            }
+
+                            '3' -> {
+                                dtn =
+                                    dtn.reversed()
+                            }
+
+                            else -> {
+                                val shift =
+                                    (
+                                        26 -
+                                            (
+                                                (
+                                                    marker.code -
+                                                        96
+                                                ) % 26
+                                            )
+                                        ) % 26
+
+                                dtn =
+                                    dtn.map { character ->
+                                        when {
+                                            character in 'a'..'z' -> {
+                                                (
+                                                    (
+                                                        character.code -
+                                                            'a'.code +
+                                                            shift
+                                                    ) % 26 +
+                                                        'a'.code
+                                                    )
+                                                    .toChar()
+                                            }
+
+                                            character in 'A'..'Z' -> {
+                                                (
+                                                    (
+                                                        character.code -
+                                                            'A'.code +
+                                                            shift
+                                                    ) % 26 +
+                                                        'A'.code
+                                                    )
+                                                    .toChar()
+                                            }
+
+                                            else -> {
+                                                character
+                                            }
+                                        }
+                                    }.joinToString("")
+                            }
+                        }
+                    }
+
+                    if (dauei.length > 2048) {
+                        dtn =
+                            dtn.reversed()
+                    }
+
+                    val chars =
+                        dtn.toMutableList()
+
+                    val shuffleKeys =
+                        LongArray(
+                            chars.size
+                        )
+
+                    for (
+                        index in
+                        chars.size - 1 downTo 1
+                    ) {
+                        byo9b =
+                            (
+                                byo9b * 97L +
+                                    41L
+                                ) % 65519L
+
+                        shuffleKeys[index] =
+                            byo9b %
+                                (
+                                    index + 1L
+                                )
+                    }
+
+                    for (
+                        index in
+                        1 until chars.size
+                    ) {
+                        val swapIndex =
+                            shuffleKeys[index]
+                                .toInt()
+
+                        if (
+                            swapIndex in chars.indices
+                        ) {
+                            val temp =
+                                chars[index]
+
+                            chars[index] =
+                                chars[swapIndex]
+
+                            chars[swapIndex] =
+                                temp
+                        }
+                    }
+
+                    dtn =
+                        chars.joinToString("")
+
+                    var orm =
+                        td0
+
+                    val output =
+                        StringBuilder(
+                            dtn.length
+                        )
+
+                    for (
+                        character in dtn
+                    ) {
+                        val code =
+                            character.code
+
+                        orm =
+                            (
+                                orm * 5 +
+                                    ixs
+                                ) and 255
+
+                        output.append(
+                            (
+                                code xor orm
+                            ).toChar()
+                        )
+
+                        orm =
+                            (
+                                orm +
+                                    code
+                            ) and 255
+                    }
+
+                    output.toString()
+                } catch (error: Exception) {
+                    println(
+                        "HDFilmCehennemi: CUSTOM ARRAY DECODER hatası -> " +
+                            "${error::class.simpleName}: ${error.message}"
+                    )
+                    null
+                }
+            }
+
+            fun decodeCustomPackedSources(
+                decodedJs: String
+            ): List<String> {
+                val results =
+                    linkedSetOf<String>()
+
+                val callRegex =
+                    Regex(
+                        """(?s)(?:var\s+)?\w+\s*=\s*\w+\(\s*["']([^"']{20,})["']\s*\.split\(\s*["']#["']\s*\)\s*\)"""
+                    )
+
+                for (
+                    match in
+                    callRegex.findAll(decodedJs)
+                ) {
+                    val encoded =
+                        match.groupValues[1]
+
+                    /*
+                     * Yalnızca # parçalı array şemasını dene.
+                     * Yanlış decoder sonucu URL değilse sessizce geç.
+                     */
+                    val decoded =
+                        decodeRplayerArray(
+                            encoded
+                        )
+
+                    println(
+                        "HDFilmCehennemi: CUSTOM ARRAY candidate -> " +
+                            "parts=" +
+                            encoded.count { it == '#' } +
+                            " separators | decoded=" +
+                            (decoded?.length ?: 0)
+                    )
+
+                    if (
+                        decoded.isNullOrBlank()
+                    ) {
+                        continue
+                    }
+
+                    val cleaned =
+                        cleanVideoUrl(
+                            decoded
+                        )
+
+                    if (
+                        isValidVideoUrl(
+                            cleaned
+                        )
+                    ) {
+                        results.add(
+                            cleaned!!
+                        )
+                    }
+
+                    findVideoUrlInText(
+                        decoded
+                    )?.takeUnless {
+                        it.contains(
+                            "master.txt",
+                            ignoreCase = true
+                        )
+                    }?.let {
+                        results.add(
+                            it
+                        )
+                    }
+
+                    if (
+                        decoded.contains(
+                            "http",
+                            ignoreCase = true
+                        )
+                    ) {
+                        println(
+                            "HDFilmCehennemi: CUSTOM ARRAY RESULT -> " +
+                                decoded.take(500)
+                        )
+                    }
+                }
+
+                return results.toList()
+            }
+
             fun unpackJs(
                 packedCode: String,
                 base: Int,
@@ -1604,36 +1968,134 @@ class HdFilmCehennemiProvider : MainAPI() {
             /* PACKED JS METINSEL AÇICI */
             fun unpackPackedJavaScript(packed: String): String? {
                 return try {
-                    val marker = "eval(function(p,a,c,k,e,d)"
-                    val start = packed.indexOf(marker)
-                    if (start < 0) return null
-                    val tail = packed.substring(start)
-                    val re = Regex("""(?s)\('((?:\\.|[^'])*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:\\.|[^'])*)'\.split\('\|'\)""")
-                    val m = re.find(tail) ?: return null
-                    fun unesc(v: String) = v.replace("\\\\'", "'").replace("\\\\\\\\", "\\").replace("\\\\n", "\n").replace("\\\\r", "\r").replace("\\\\t", "\t")
-                    val payload = unesc(m.groupValues[1])
-                    val base = m.groupValues[2].toInt()
-                    val dict = unesc(m.groupValues[4]).split('|')
-                    fun num(v: String): Int {
-                        var n = 0
-                        for (c in v) {
-                            val d = when {
-                                c in '0'..'9' -> c.code - 48
-                                c in 'a'..'z' -> c.code - 87
-                                c in 'A'..'Z' -> c.code - 29
-                                else -> return -1
-                            }
-                            if (d >= base) return -1
-                            n = n * base + d
+                    var current = packed
+
+                    /*
+                     * Güncel player'da packed JS bir kez daha packed
+                     * eval içerebiliyor. Bu nedenle aynı çözümü birkaç
+                     * katman boyunca uygula. Normal tek katmanlı scriptlerde
+                     * yalnızca ilk tur çalışır.
+                     */
+                    repeat(4) { layer ->
+                        val marker = "eval(function(p,a,c,k,e,d)"
+                        val start = current.indexOf(marker)
+
+                        if (start < 0) {
+                            return@repeat
                         }
-                        return n
+
+                        val tail =
+                            current.substring(start)
+
+                        val re =
+                            Regex(
+                                """(?s)\('((?:\\.|[^'])*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:\\.|[^'])*)'\.split\('\|'\)"""
+                            )
+
+                        val match =
+                            re.find(tail)
+                                ?: return@repeat
+
+                        fun unescapePackedValue(
+                            value: String
+                        ): String =
+                            value
+                                .replace("\\\\'", "'")
+                                .replace("\\\\\\\\", "\\")
+                                .replace("\\\\n", "\n")
+                                .replace("\\\\r", "\r")
+                                .replace("\\\\t", "\t")
+
+                        val payload =
+                            unescapePackedValue(
+                                match.groupValues[1]
+                            )
+
+                        val base =
+                            match.groupValues[2]
+                                .toInt()
+
+                        val dictionary =
+                            unescapePackedValue(
+                                match.groupValues[4]
+                            ).split("|")
+
+                        fun parsePackedNumber(
+                            value: String
+                        ): Int {
+                            if (value.isEmpty()) {
+                                return 0
+                            }
+
+                            var number = 0
+
+                            for (character in value) {
+                                val digit =
+                                    when {
+                                        character in '0'..'9' ->
+                                            character.code - 48
+
+                                        character in 'a'..'z' ->
+                                            character.code - 87
+
+                                        character in 'A'..'Z' ->
+                                            character.code - 29
+
+                                        else ->
+                                            return -1
+                                    }
+
+                                if (digit >= base) {
+                                    return -1
+                                }
+
+                                number =
+                                    number * base +
+                                        digit
+                            }
+
+                            return number
+                        }
+
+                        val decoded =
+                            Regex("""\b\w+\b""")
+                                .replace(
+                                    payload
+                                ) { hit ->
+                                    val index =
+                                        parsePackedNumber(
+                                            hit.value
+                                        )
+
+                                    if (
+                                        index >= 0 &&
+                                        index < dictionary.size &&
+                                        dictionary[index].isNotEmpty()
+                                    ) {
+                                        dictionary[index]
+                                    } else {
+                                        hit.value
+                                    }
+                                }
+
+                        println(
+                            "HDFilmCehennemi: PACKER layer=$layer -> " +
+                                "${current.length} -> ${decoded.length} bytes"
+                        )
+
+                        if (decoded == current) {
+                            return@repeat
+                        }
+
+                        current = decoded
                     }
-                    Regex("""\b\w+\b""").replace(payload) { hit ->
-                        val i = num(hit.value)
-                        if (i >= 0 && i < dict.size && dict[i].isNotEmpty()) dict[i] else hit.value
-                    }
-                } catch (e: Exception) {
-                    println("HDFilmCehennemi: PACKER hata -> ${e::class.simpleName}: ${e.message}")
+
+                    current
+                } catch (error: Exception) {
+                    println(
+                        "HDFilmCehennemi: PACKER hata -> " +
+                            "${error::class.simpleName}: ${error.message}"
+                    )
                     null
                 }
             }
@@ -2246,7 +2708,12 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                                 scrapeIframe(
                                     movieEmbedUrl
-                                )?.let {
+                                )?.takeUnless {
+                                    it.contains(
+                                        "master.txt",
+                                        ignoreCase = true
+                                    )
+                                }?.let {
                                     println(
                                         "HDFilmCehennemi: RPLAYER film embed video bulundu -> $it"
                                     )
@@ -2263,13 +2730,57 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                     /*
                      * ------------------------------------------------
-                     * 2. Doğrudan M3U8
+                     * 2. CUSTOM RPLAYER ARRAY DECODER
+                     * ------------------------------------------------
+                     *
+                     * Güncel hdfilmcehennemi.mobi embed'inde JSON-LD
+                     * içindeki master.txt stale olabiliyor. Bu yüzden
+                     * genel URL taramasından ÖNCE packed JS'in ikinci
+                     * vwt(array) katmanını çöz.
+                     */
+                    val unpackedForCustomDecoder =
+                        unpackPackedJavaScript(
+                            html
+                        )
+
+                    if (
+                        !unpackedForCustomDecoder.isNullOrBlank()
+                    ) {
+                        println(
+                            "HDFilmCehennemi: CUSTOM PACKED DECODED bytes=" +
+                                unpackedForCustomDecoder.length
+                        )
+
+                        decodeCustomPackedSources(
+                            unpackedForCustomDecoder
+                        ).forEach { customUrl ->
+                            println(
+                                "HDFilmCehennemi: CUSTOM RPLAYER MEDYA -> " +
+                                    customUrl
+                            )
+                            return customUrl
+                        }
+                    }
+
+                    /*
+                     * ------------------------------------------------
+                     * 3. Doğrudan M3U8
                      * ------------------------------------------------
                      */
 
                     findVideoUrlInText(
                         html
-                    )?.let {
+                    )?.takeUnless {
+                        /*
+                         * Bu player sürümünde JSON-LD içindeki master.txt
+                         * bilinen şekilde 404 dönüyor. Gerçek medya bulunursa
+                         * custom decoder zaten yukarıda onu döndürüyor.
+                         */
+                        it.contains(
+                            "master.txt",
+                            ignoreCase = true
+                        )
+                    }?.let {
                         println(
                             "HDFilmCehennemi: doğrudan m3u8 bulundu"
                         )
@@ -2374,9 +2885,24 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 keywords
                             )
 
+                        decodeCustomPackedSources(
+                            decodedJs
+                        ).forEach { customUrl ->
+                            println(
+                                "HDFilmCehennemi: CUSTOM RPLAYER MEDYA (LEGACY PACKED) -> " +
+                                    customUrl
+                            )
+                            return customUrl
+                        }
+
                         findVideoUrlInText(
                             decodedJs
-                        )?.let {
+                        )?.takeUnless {
+                            it.contains(
+                                "master.txt",
+                                ignoreCase = true
+                            )
+                        }?.let {
                             return it
                         }
 

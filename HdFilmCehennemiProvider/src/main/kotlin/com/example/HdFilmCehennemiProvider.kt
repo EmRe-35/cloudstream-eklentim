@@ -2007,7 +2007,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                          */
                         val absolutePlaylist =
                             Regex(
-                                "https?://[^\"'`<>\\\s]+\\.m3u8(?:\\?[^\"'`<>\\\s]*)?",
+                                """https?://[^"'`<>\s]+\.m3u8(?:\?[^"'`<>\s]*)?""",
                                 setOf(RegexOption.IGNORE_CASE)
                             )
                                 .find(normalizedBody)

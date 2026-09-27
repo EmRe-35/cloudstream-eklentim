@@ -1517,7 +1517,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                         response.text
 
                     val rawScriptBlocks = Regex(
-                        """(?is)<script\\b[^>]*>(.*?)</script\\s*>"""
+                        """(?is)<script\b[^>]*>(.*?)</script\s*>"""
                     ).findAll(html).map { it.groupValues[1] }.toList()
 
                     println("HDFilmCehennemi: RPLAYER HAM SCRIPT SAYISI = ${rawScriptBlocks.size}")

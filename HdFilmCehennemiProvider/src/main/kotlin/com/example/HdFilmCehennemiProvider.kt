@@ -1453,10 +1453,10 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                 val visited = mutableSetOf<String>()
 
-                repeat(8) {
+                for (attempt in 0 until 8) {
 
                     if (!visited.add(currentUrl)) {
-                        return@repeat
+                        continue
                     }
 
                     try {

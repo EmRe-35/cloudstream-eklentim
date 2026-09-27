@@ -723,7 +723,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                     listOf(
 
                         Regex(
-                            """https?://[^"'`<>\s\\]+\.m3u8(?:\?[^"'`<>\s\\]*)?""",
+                            """https?://[^"'`<>\s]+\.m3u8(?:\?[^"'`<>\s]*)?""",
                             setOf(
                                 RegexOption.IGNORE_CASE
                             )
@@ -1557,7 +1557,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                             val genericUrl =
                                 Regex(
-                                    """https?://[^"'`<>\s\\]+(?:\.mp4(?:\?[^"'`<>\s\\]*)?|/hls/[^"'`<>\s\\]+)""",
+                                    """https?://[^"'`<>\s]+(?:\.mp4(?:\?[^"'`<>\s]*)?|/hls/[^"'`<>\s]+)""",
                                     setOf(RegexOption.IGNORE_CASE)
                                 )
                                     .find(body)
@@ -2199,7 +2199,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                          */
                         val movieEmbedCandidates =
                             Regex(
-                                """https://hdfilmcehennemi\.mobi/video/embed/[^"'`<>\s\\]+""",
+                                """https://hdfilmcehennemi\.mobi/video/embed/[^"'`<>\s]+""",
                                 setOf(RegexOption.IGNORE_CASE)
                             )
                                 .findAll(html)

@@ -1894,11 +1894,235 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ========================================================
+             * MASTER.TXT -> GERÇEK HLS PLAYLIST
+             *
+             * Logcat'te Rapidrame bize örneğin:
+             *
+             * https://hls8.playmix.uno/hls/...mp4/master.txt
+             *
+             * döndürüyor. Bu adres CloudStream'in M3u8Helper'ına
+             * doğrudan verildiğinde playlist olarak kabul edilmiyor.
+             *
+             * Bu nedenle master.txt önce GET ediliyor. İçeriği:
+             * - gerçek bir #EXTM3U playlist ise aynı URL,
+             * - başka bir .m3u8 URL'si ise o URL,
+             * - JSON/HTML/JS içinde bir playlist URL'si ise bulunan URL
+             * olarak çözülüyor.
+             *
+             * Böylece master.txt hiçbir zaman doğrudan M3u8Helper'a
+             * gönderilmiyor.
+             * ========================================================
+             */
+
+            suspend fun resolveMasterPlaylist(
+                rawUrl: String,
+                referer: String
+            ): String? {
+
+                val initialUrl =
+                    cleanVideoUrl(rawUrl)
+                        ?: return null
+
+                if (
+                    !initialUrl.contains(
+                        "master.txt",
+                        ignoreCase = true
+                    )
+                ) {
+                    return initialUrl
+                }
+
+                val requestHeaders =
+                    mapOf(
+                        "User-Agent" to userAgent,
+                        "Accept" to "*/*",
+                        "Referer" to referer
+                    )
+
+                val queue =
+                    ArrayDeque<String>()
+
+                val visited =
+                    mutableSetOf<String>()
+
+                queue.add(initialUrl)
+
+                repeat(6) {
+
+                    if (queue.isEmpty()) {
+                        return@repeat
+                    }
+
+                    val candidate =
+                        queue.removeFirst()
+
+                    if (!visited.add(candidate)) {
+                        return@repeat
+                    }
+
+                    try {
+
+                        println(
+                            "HDFilmCehennemi: playlist çözülüyor -> $candidate"
+                        )
+
+                        val response =
+                            app.get(
+                                candidate,
+                                headers = requestHeaders
+                            )
+
+                        val body =
+                            response.text
+                                .trim()
+
+                        if (body.isBlank()) {
+                            return@repeat
+                        }
+
+                        /* Gerçek HLS playlist'i. */
+                        if (
+                            body.startsWith("#EXTM3U") ||
+                            body.contains("#EXT-X-STREAM-INF") ||
+                            body.contains("#EXTINF:")
+                        ) {
+
+                            println(
+                                "HDFilmCehennemi: gerçek HLS playlist bulundu -> $candidate"
+                            )
+
+                            return candidate
+                        }
+
+                        val normalizedBody =
+                            body
+                                .replace("\\/", "/")
+                                .replace("&amp;", "&")
+                                .replace("\\u002F", "/")
+                                .replace("\\u0026", "&")
+                                .replace("\\u003D", "=")
+
+                        /*
+                         * JSON / HTML / JS içindeki mutlak .m3u8.
+                         */
+                        val absolutePlaylist =
+                            Regex(
+                                "https?://[^\"'`<>\\\s]+\\.m3u8(?:\\?[^\"'`<>\\\s]*)?",
+                                setOf(RegexOption.IGNORE_CASE)
+                            )
+                                .find(normalizedBody)
+                                ?.value
+                                ?.trimEnd(
+                                    '\"', '\'', '`', ',', ';', ')'
+                                )
+
+                        if (!absolutePlaylist.isNullOrBlank()) {
+
+                            queue.add(absolutePlaylist)
+                            return@repeat
+                        }
+
+                        /*
+                         * Yanıt yalnızca bir URL ise onu da takip et.
+                         */
+                        val plainUrl =
+                            normalizedBody
+                                .lineSequence()
+                                .map { it.trim() }
+                                .firstOrNull { line ->
+                                    line.startsWith("https://") ||
+                                        line.startsWith("http://")
+                                }
+
+                        if (!plainUrl.isNullOrBlank()) {
+
+                            queue.add(
+                                plainUrl
+                                    .trim(
+                                        '\"', '\'', '`', ','
+                                    )
+                            )
+                            return@repeat
+                        }
+
+                        /*
+                         * Göreli .m3u8 yolu.
+                         */
+                        val relativePlaylist =
+                            Regex(
+                                """(?:^|[\"' =:])((?:\./|\../|/)?[^\"'<>\s]+\.m3u8(?:\?[^\"'<>\s]*)?)""",
+                                setOf(RegexOption.IGNORE_CASE)
+                            )
+                                .find(normalizedBody)
+                                ?.groupValues
+                                ?.getOrNull(1)
+
+                        if (!relativePlaylist.isNullOrBlank()) {
+
+                            val base =
+                                candidate.substringBeforeLast("/", candidate)
+
+                            val resolvedRelative =
+                                when {
+                                    relativePlaylist.startsWith("/") -> {
+                                        val origin =
+                                            Regex("^(https?://[^/]+)")
+                                                .find(candidate)
+                                                ?.groupValues
+                                                ?.getOrNull(1)
+
+                                        if (origin.isNullOrBlank()) {
+                                            null
+                                        } else {
+                                            origin + relativePlaylist
+                                        }
+                                    }
+
+                                    relativePlaylist.startsWith("../") -> {
+                                        base.substringBeforeLast("/", base) +
+                                            "/" +
+                                            relativePlaylist.removePrefix("../")
+                                    }
+
+                                    relativePlaylist.startsWith("./") -> {
+                                        base + "/" +
+                                            relativePlaylist.removePrefix("./")
+                                    }
+
+                                    else -> {
+                                        base + "/" + relativePlaylist
+                                    }
+                                }
+
+                            if (!resolvedRelative.isNullOrBlank()) {
+                                queue.add(resolvedRelative)
+                                return@repeat
+                            }
+                        }
+
+                    } catch (error: Exception) {
+
+                        println(
+                            "HDFilmCehennemi: playlist çözme hatası -> " +
+                                "${error::class.simpleName}: ${error.message}"
+                        )
+                    }
+                }
+
+                println(
+                    "HDFilmCehennemi: master.txt gerçek HLS'e çözülemedi -> $initialUrl"
+                )
+
+                return null
+            }
+
+            /*
+             * ========================================================
              * NULLABLE -> STRING
              * ========================================================
              */
 
-            val resolvedVideoUrl: String =
+            val rawResolvedVideoUrl: String =
                 cleanVideoUrl(
                     videoUrl
                 ) ?: run {
@@ -1910,6 +2134,34 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                     return false
                 }
+
+            val playlistReferer =
+                "$mainUrl/"
+
+            val resolvedVideoUrl =
+                if (
+                    rawResolvedVideoUrl.contains(
+                        "master.txt",
+                        ignoreCase = true
+                    )
+                ) {
+                    resolveMasterPlaylist(
+                        rawResolvedVideoUrl,
+                        playlistReferer
+                    )
+                } else {
+                    rawResolvedVideoUrl
+                }
+
+            if (resolvedVideoUrl.isNullOrBlank()) {
+
+                println(
+                    "HDFilmCehennemi: master.txt geçerli HLS'e çevrilemedi -> " +
+                        rawResolvedVideoUrl
+                )
+
+                return false
+            }
 
             if (
                 !isValidVideoUrl(
@@ -2077,7 +2329,14 @@ try {
             error.message
     )
 
-    return false
+    callback(
+        newExtractorLink(
+    source = this.name,
+    name = if (isRapidrame) "Rapidrame HLS" else "HDFilmCehennemi HLS",
+    url = resolvedVideoUrl,
+    type = ExtractorLinkType.M3U8
+)
+    )
 }
 
             true

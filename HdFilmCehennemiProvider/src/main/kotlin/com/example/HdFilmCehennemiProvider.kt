@@ -1557,7 +1557,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                             val genericUrl =
                                 Regex(
-                                    """https?://[^"'`<>\s\]+(?:\.mp4(?:\?[^"'`<>\s\]*)?|/hls/[^"'`<>\s\]+)""",
+                                    """https?://[^"'`<>\s\\]+(?:\.mp4(?:\?[^"'`<>\s\\]*)?|/hls/[^"'`<>\s\\]+)""",
                                     setOf(RegexOption.IGNORE_CASE)
                                 )
                                     .find(body)
@@ -2190,6 +2190,74 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 "HDFilmCehennemi: Rapidrame gerçek video bulundu -> $it"
                             )
                             return it
+                        }
+
+                        /*
+                         * Rapidrame HTML'i aynı film için bir hdfilmcehennemi.mobi
+                         * embed adresi de taşıyor. master.txt stale/404 olduğunda
+                         * bu film-spesifik sayfayı ikinci kaynak olarak çöz.
+                         */
+                        val movieEmbedCandidates =
+                            Regex(
+                                """https://hdfilmcehennemi\.mobi/video/embed/[^"'`<>\s\\]+""",
+                                setOf(RegexOption.IGNORE_CASE)
+                            )
+                                .findAll(html)
+                                .map {
+                                    it.value
+                                        .trimEnd(
+                                            '"',
+                                            '\'',
+                                            '`',
+                                            ',',
+                                            ';',
+                                            ')',
+                                            ']',
+                                            '}'
+                                        )
+                                }
+                                .map { normalizeUrl(it) }
+                                .distinct()
+                                .take(5)
+                                .toList()
+
+                        if (movieEmbedCandidates.isNotEmpty()) {
+                            println(
+                                "HDFilmCehennemi: RPLAYER film embed adayları -> " +
+                                    movieEmbedCandidates.joinToString(" | ")
+                            )
+                        }
+
+                        for (movieEmbedUrl in movieEmbedCandidates) {
+                            if (
+                                movieEmbedUrl.equals(
+                                    iframeUrl,
+                                    ignoreCase = true
+                                )
+                            ) {
+                                continue
+                            }
+
+                            try {
+                                println(
+                                    "HDFilmCehennemi: RPLAYER film embed deneniyor -> " +
+                                        movieEmbedUrl
+                                )
+
+                                scrapeIframe(
+                                    movieEmbedUrl
+                                )?.let {
+                                    println(
+                                        "HDFilmCehennemi: RPLAYER film embed video bulundu -> $it"
+                                    )
+                                    return it
+                                }
+                            } catch (error: Exception) {
+                                println(
+                                    "HDFilmCehennemi: RPLAYER film embed hatası -> " +
+                                        "${error::class.simpleName}: ${error.message}"
+                                )
+                            }
                         }
                     }
 

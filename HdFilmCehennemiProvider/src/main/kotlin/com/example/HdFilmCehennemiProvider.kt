@@ -1410,6 +1410,66 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ========================================================
              */
 
+            /* PACKED JS METINSEL AÇICI */
+            fun unpackPackedJavaScript(packed: String): String? {
+                return try {
+                    val marker = "eval(function(p,a,c,k,e,d)"
+                    val start = packed.indexOf(marker)
+                    if (start < 0) return null
+                    val tail = packed.substring(start)
+                    val re = Regex("""(?s)\('((?:\\.|[^'])*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:\\.|[^'])*)'\.split\('\|'\)""")
+                    val m = re.find(tail) ?: return null
+                    fun unesc(v: String) = v.replace("\\\\'", "'").replace("\\\\\\\\", "\\").replace("\\\\n", "\n").replace("\\\\r", "\r").replace("\\\\t", "\t")
+                    val payload = unesc(m.groupValues[1])
+                    val base = m.groupValues[2].toInt()
+                    val dict = unesc(m.groupValues[4]).split('|')
+                    fun num(v: String): Int {
+                        var n = 0
+                        for (c in v) {
+                            val d = when {
+                                c in '0'..'9' -> c.code - 48
+                                c in 'a'..'z' -> c.code - 87
+                                c in 'A'..'Z' -> c.code - 29
+                                else -> return -1
+                            }
+                            if (d >= base) return -1
+                            n = n * base + d
+                        }
+                        return n
+                    }
+                    Regex("""\b\w+\b""").replace(payload) { hit ->
+                        val i = num(hit.value)
+                        if (i >= 0 && i < dict.size && dict[i].isNotEmpty()) dict[i] else hit.value
+                    }
+                } catch (e: Exception) {
+                    println("HDFilmCehennemi: PACKER hata -> ${e::class.simpleName}: ${e.message}")
+                    null
+                }
+            }
+
+            fun logPackedDecode(script: String, index: Int) {
+                val decoded = unpackPackedJavaScript(script)
+                if (decoded.isNullOrBlank()) {
+                    println("HDFilmCehennemi: PACKED[$index] açılamadı")
+                    return
+                }
+                println("HDFilmCehennemi: PACKED[$index] DECODED bytes=${decoded.length}")
+                val keywords = listOf("rniq6", "rt6", "m3u8", "master.txt", "playmix", "sources", "file:", "contentUrl", "fetch(", "XMLHttpRequest", "ajax")
+                for (keyword in keywords) {
+                    var from = 0
+                    var count = 0
+                    while (count < 10) {
+                        val pos = decoded.indexOf(keyword, from, ignoreCase = true)
+                        if (pos < 0) break
+                        val a = maxOf(0, pos - 1500)
+                        val b = minOf(decoded.length, pos + 3500)
+                        println("HDFilmCehennemi: PACKED[$index][$keyword] -> " + decoded.substring(a, b).replace("\\n", " ").replace("\\r", " ").replace(Regex("\\\\s+"), " "))
+                        from = pos + keyword.length
+                        count++
+                    }
+                }
+            }
+
             suspend fun scrapeIframe(
                 iframeUrl: String
             ): String? {
@@ -1455,6 +1515,19 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                     val html =
                         response.text
+
+                    val rawScriptBlocks = Regex(
+                        """(?is)<script\\b[^>]*>(.*?)</script\\s*>"""
+                    ).findAll(html).map { it.groupValues[1] }.toList()
+
+                    println("HDFilmCehennemi: RPLAYER HAM SCRIPT SAYISI = ${rawScriptBlocks.size}")
+                    rawScriptBlocks.forEachIndexed { scriptIndex, scriptBody ->
+                        val compact = scriptBody.replace("\\n", " ").replace("\\r", " ").replace(Regex("\\\\s+"), " ").trim()
+                        println("HDFilmCehennemi: HAM SCRIPT[$scriptIndex] bytes=${scriptBody.length} prefix=${compact.take(120)}")
+                        if (compact.contains("eval(function(p,a,c,k,e,d)") || compact.contains("rniq6")) {
+                            logPackedDecode(scriptBody, scriptIndex)
+                        }
+                    }
 
                     println(
                         "HDFilmCehennemi: iframe HTTP -> " +
@@ -1582,60 +1655,21 @@ class HdFilmCehennemiProvider : MainAPI() {
                          * dosyaları indirip çevresini logla.
                          * ------------------------------------------------
                          */
-                        /* HAM HTML SCRIPT ANALIZI */
-                        val rawScriptBlocks = Regex(
-                            "(?is)<script\\b[^>]*>(.*?)</script>"
-                        ).findAll(html).map { it.groupValues[1] }.toList()
-
-                        println(
-                            "HDFilmCehennemi: RPLAYER HAM SCRIPT SAYISI = " +
-                                rawScriptBlocks.size
-                        )
-
-                        rawScriptBlocks.forEachIndexed { scriptIndex, scriptText ->
-                            if (scriptIndex == 3 || Regex(
-                                    "(?i)(rt6|playmix|master\\.txt|contentUrl|ergv8H1E1Or|m3u8|sources|file\\s*:)"
-                                ).containsMatchIn(scriptText)
-                            ) {
-                                println(
-                                    "HDFilmCehennemi: HAM SCRIPT[$scriptIndex] bytes=${scriptText.length}"
-                                )
-
-                                val keywords = listOf(
-                                    "rt6",
-                                    "playmix",
-                                    "master.txt",
-                                    "contentUrl",
-                                    "ergv8H1E1Or",
-                                    "m3u8",
-                                    "sources",
-                                    "file:"
-                                )
-
+                        /* INLINE SCRIPT[3] HEDEF ANALIZI */
+                        playerDocument.select("script").forEachIndexed { scriptIndex, script ->
+                            val scriptText = script.data().ifBlank { script.html() }
+                            if (scriptIndex == 3 || scriptText.contains("rt6", ignoreCase = true)) {
+                                val keywords = listOf("rt6", "playmix", "master.txt", "contentUrl", "ergv8H1E1Or", "m3u8", "sources", "file:")
+                                println("HDFilmCehennemi: INLINE SCRIPT TARGET[$scriptIndex] bytes=${scriptText.length}")
                                 for (keyword in keywords) {
                                     var from = 0
                                     var count = 0
-
                                     while (count < 10) {
-                                        val pos = scriptText.indexOf(
-                                            keyword,
-                                            from,
-                                            ignoreCase = true
-                                        )
-
+                                        val pos = scriptText.indexOf(keyword, from, ignoreCase = true)
                                         if (pos < 0) break
-
                                         val start = maxOf(0, pos - 2000)
                                         val end = minOf(scriptText.length, pos + 3000)
-
-                                        println(
-                                            "HDFilmCehennemi: HAM TARGET[$scriptIndex][$keyword] -> " +
-                                                scriptText.substring(start, end)
-                                                    .replace("\n", " ")
-                                                    .replace("\r", " ")
-                                                    .replace(Regex("\\s+"), " ")
-                                        )
-
+                                        println("HDFilmCehennemi: INLINE TARGET[$scriptIndex][$keyword] -> " + scriptText.substring(start, end).replace("\n", " ").replace("\r", " ").replace(Regex("\\s+"), " "))
                                         from = pos + keyword.length
                                         count++
                                     }

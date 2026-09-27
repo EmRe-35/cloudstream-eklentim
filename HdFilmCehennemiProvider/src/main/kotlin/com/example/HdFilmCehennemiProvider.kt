@@ -1803,34 +1803,14 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ========================================================
              */
 
-            if (videoUrl == null) {
+            if (
+                videoUrl == null ||
+                    videoUrl?.contains("master.txt", ignoreCase = true) == true
+            ) {
 
-                val primaryIframe =
-                    iframeElements
-                        .firstOrNull()
-                        ?.let {
-                            firstNonBlank(
-                                it.attr("src"),
-                                it.attr("data-src")
-                            )
-                        }
-
-                val videoId =
-                    primaryIframe
-                        ?.let {
-                            Regex(
-                                """embed/([^/?]+)"""
-                            )
-                                .find(it)
-                                ?.groupValues
-                                ?.getOrNull(1)
-                        }
-
-                if (!videoId.isNullOrBlank()) {
-
-                    for (
-                        alternative in alternatives
-                    ) {
+                for (
+                    alternative in alternatives
+                ) {
 
                         if (alternative.active) {
                             continue
@@ -1843,52 +1823,136 @@ class HdFilmCehennemiProvider : MainAPI() {
                             continue
                         }
 
-                        val alternativeUrl =
-                            if (
-                                alternative.name.equals(
-                                    "Rapidrame",
-                                    ignoreCase = true
-                                )
-                            ) {
+                        /*
+                         * movie.js'in gerçek akışını burada birebir takip et:
+                         *
+                         *   GET /video/{data-video}/
+                         *   -> JSON { data: { html: "<iframe ...>" } }
+                         *   -> data.html içindeki iframe[data-src]
+                         *
+                         * Önceki sürüm data-video değerini doğrudan
+                         * /video/embed/{filmId}/?rapidrame_id=... URL'sine
+                         * çeviriyordu. Bu, güncel sitede yanlış/stale player
+                         * katmanına gidebiliyordu.
+                         */
+                        val alternativeId =
+                            alternative.videoId
+                                ?.trim()
+                                .orEmpty()
 
-                                "https://hdfilmcehennemi.mobi" +
-                                    "/video/embed/" +
-                                    videoId +
-                                    "/?rapidrame_id=" +
-                                    alternative.videoId
+                        val videoEndpoint =
+                            "$mainUrl/video/$alternativeId/"
 
-                            } else {
-
-                                "https://hdfilmcehennemi.mobi" +
-                                    "/video/embed/" +
-                                    videoId +
-                                    "/"
-                            }
-
-                        println(
-                            "HDFilmCehennemi: alternatif deneniyor -> " +
-                                alternativeUrl
-                        )
-
-                        val alternativeResult =
-                            scrapeIframe(
-                                alternativeUrl
+                        val videoEndpointHeaders =
+                            mapOf(
+                                "User-Agent" to userAgent,
+                                "Accept" to "application/json,text/plain,*/*",
+                                "Content-Type" to "application/json",
+                                "X-Requested-With" to "fetch",
+                                "Referer" to pageUrl
                             )
 
-                        if (
-                            alternativeResult != null
-                        ) {
+                        println(
+                            "HDFilmCehennemi: alternatif endpoint -> " +
+                                videoEndpoint
+                        )
 
-                            videoUrl =
-                                alternativeResult
+                        try {
 
-                            usedIframe =
-                                alternativeUrl
+                            val endpointResponse =
+                                app.get(
+                                    videoEndpoint,
+                                    headers = videoEndpointHeaders
+                                )
 
-                            break
+                            val endpointBody =
+                                endpointResponse.text
+
+                            println(
+                                "HDFilmCehennemi: alternatif endpoint HTTP -> " +
+                                    endpointResponse.code +
+                                    " | body=" +
+                                    endpointBody.take(300)
+                            )
+
+                            val endpointJson =
+                                org.json.JSONObject(endpointBody)
+
+                            val returnedHtml =
+                                endpointJson
+                                    .optJSONObject("data")
+                                    ?.optString("html")
+                                    ?.trim()
+                                    .orEmpty()
+
+                            if (returnedHtml.isBlank()) {
+
+                                println(
+                                    "HDFilmCehennemi: /video/$alternativeId/ içinde data.html bulunamadı"
+                                )
+
+                                continue
+                            }
+
+                            val returnedDocument =
+                                org.jsoup.Jsoup.parse(
+                                    returnedHtml,
+                                    mainUrl
+                                )
+
+                            val returnedIframe =
+                                returnedDocument
+                                    .select("iframe[data-src], iframe[src]")
+                                    .firstOrNull()
+                                    ?.let { iframe ->
+                                        firstNonBlank(
+                                            iframe.attr("data-src"),
+                                            iframe.attr("src")
+                                        )
+                                    }
+                                    ?.trim()
+
+                            if (returnedIframe.isNullOrBlank()) {
+
+                                println(
+                                    "HDFilmCehennemi: data.html içinde iframe bulunamadı -> $videoEndpoint"
+                                )
+
+                                continue
+                            }
+
+                            val alternativeIframe =
+                                normalizeUrl(returnedIframe)
+
+                            println(
+                                "HDFilmCehennemi: endpoint iframe -> " +
+                                    alternativeIframe
+                            )
+
+                            val alternativeResult =
+                                scrapeIframe(
+                                    alternativeIframe
+                                )
+
+                            if (alternativeResult != null) {
+
+                                videoUrl =
+                                    alternativeResult
+
+                                usedIframe =
+                                    alternativeIframe
+
+                                break
+                            }
+
+                        } catch (error: Exception) {
+
+                            println(
+                                "HDFilmCehennemi: alternatif endpoint hatası -> " +
+                                    "${error::class.simpleName}: ${error.message}"
+                            )
                         }
                     }
-                }
             }
 
             /*

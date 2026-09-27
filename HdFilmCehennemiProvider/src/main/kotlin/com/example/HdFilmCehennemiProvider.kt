@@ -6,6 +6,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.select.Elements
 import java.net.URLEncoder
+import java.net.URI
 
 class HdFilmCehennemiProvider : MainAPI() {
 
@@ -1745,13 +1746,22 @@ class HdFilmCehennemiProvider : MainAPI() {
                 iframeElement in iframeElements
             ) {
 
+                val srcAttribute =
+                    iframeElement.attr("src").trim()
+
+                val dataSrcAttribute =
+                    iframeElement.attr("data-src").trim()
+
                 val rawIframe =
                     firstNonBlank(
-                        iframeElement.attr("src"),
-                        iframeElement.attr("data-src")
+                        srcAttribute.ifBlank { null },
+                        dataSrcAttribute.ifBlank { null }
                     )
 
                 if (rawIframe.isNullOrBlank()) {
+                    println(
+                        "HDFilmCehennemi: iframe atlandı -> src/data-src boş"
+                    )
                     continue
                 }
 
@@ -1759,6 +1769,11 @@ class HdFilmCehennemiProvider : MainAPI() {
                     normalizeUrl(
                         rawIframe
                     )
+
+                println(
+                    "HDFilmCehennemi: iframe adayı -> src=$srcAttribute | " +
+                        "data-src=$dataSrcAttribute"
+                )
 
                 println(
                     "HDFilmCehennemi: iframe deneniyor -> " +
@@ -1947,7 +1962,7 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                 queue.add(initialUrl)
 
-                repeat(6) {
+                repeat(8) {
 
                     if (queue.isEmpty()) {
                         return@repeat
@@ -1972,15 +1987,53 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 headers = requestHeaders
                             )
 
+                        val statusCode =
+                            try {
+                                response.code
+                            } catch (ignored: Exception) {
+                                -1
+                            }
+
+                        val contentType =
+                            try {
+                                response.headers["Content-Type"] ?: ""
+                            } catch (ignored: Exception) {
+                                ""
+                            }
+
+                        println(
+                            "HDFilmCehennemi: playlist HTTP -> " +
+                                "status=$statusCode | content-type=$contentType"
+                        )
+
                         val body =
                             response.text
                                 .trim()
 
                         if (body.isBlank()) {
+                            println(
+                                "HDFilmCehennemi: playlist yanıtı boş -> $candidate"
+                            )
                             return@repeat
                         }
 
-                        /* Gerçek HLS playlist'i. */
+                        val preview =
+                            body
+                                .replace("\\r", " ")
+                                .replace("\\n", " ")
+                                .replace("\\t", " ")
+                                .replace(Regex("\\s+"), " ")
+                                .take(700)
+
+                        println(
+                            "HDFilmCehennemi: playlist body[0..700] -> $preview"
+                        )
+
+                        /*
+                         * Gerçek HLS playlist'i.
+                         * master.txt'in kendisi aslında HLS ise doğrudan
+                         * aynı URL'yi CloudStream'e verebiliriz.
+                         */
                         if (
                             body.startsWith("#EXTM3U") ||
                             body.contains("#EXT-X-STREAM-INF") ||
@@ -2001,22 +2054,47 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 .replace("\\u002F", "/")
                                 .replace("\\u0026", "&")
                                 .replace("\\u003D", "=")
+                                .trim()
 
                         /*
-                         * JSON / HTML / JS içindeki mutlak .m3u8.
+                         * JSON / HTML / JS içindeki mutlak playlist URL'leri.
+                         * İlk sırada .m3u8, sonra master/index/playlist gibi
+                         * HLS isimleri aranır.
                          */
-                        val absolutePlaylist =
-                            Regex(
-                                """https?://[^"'`<>\s]+\.m3u8(?:\?[^"'`<>\s]*)?""",
-                                setOf(RegexOption.IGNORE_CASE)
-                            )
-                                .find(normalizedBody)
-                                ?.value
-                                ?.trimEnd(
-                                    '\"', '\'', '`', ',', ';', ')'
+                        val absolutePlaylistPatterns =
+                            listOf(
+                                Regex(
+                                    """https?://[^\"'`<>\s]+\.m3u8(?:\?[^\"'`<>\s]*)?""",
+                                    setOf(RegexOption.IGNORE_CASE)
+                                ),
+                                Regex(
+                                    """https?://[^\"'`<>\s]+(?:master|index|playlist)[^\"'`<>\s]*(?:\.txt|\.m3u8)(?:\?[^\"'`<>\s]*)?""",
+                                    setOf(RegexOption.IGNORE_CASE)
                                 )
+                            )
+
+                        var absolutePlaylist: String? = null
+
+                        for (pattern in absolutePlaylistPatterns) {
+                            absolutePlaylist =
+                                pattern
+                                    .find(normalizedBody)
+                                    ?.value
+                                    ?.trimEnd(
+                                        '\"', '\'', '`', ',', ';', ')', ']', '}'
+                                    )
+
+                            if (!absolutePlaylist.isNullOrBlank()) {
+                                break
+                            }
+                        }
 
                         if (!absolutePlaylist.isNullOrBlank()) {
+
+                            println(
+                                "HDFilmCehennemi: yanıttan mutlak playlist bulundu -> " +
+                                    absolutePlaylist
+                            )
 
                             queue.add(absolutePlaylist)
                             return@repeat
@@ -2036,21 +2114,27 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                         if (!plainUrl.isNullOrBlank()) {
 
-                            queue.add(
-                                plainUrl
-                                    .trim(
-                                        '\"', '\'', '`', ','
-                                    )
+                            val cleanedPlainUrl =
+                                plainUrl.trim(
+                                    '\"', '\'', '`', ',', ';', ')', ']', '}'
+                                )
+
+                            println(
+                                "HDFilmCehennemi: yanıt doğrudan URL -> $cleanedPlainUrl"
                             )
+
+                            queue.add(cleanedPlainUrl)
                             return@repeat
                         }
 
                         /*
-                         * Göreli .m3u8 yolu.
+                         * Göreli .m3u8 / playlist URL'si.
+                         * URI.resolve(), ../ ve query/hash durumlarını da
+                         * doğru şekilde ele alır.
                          */
                         val relativePlaylist =
                             Regex(
-                                """(?:^|[\"' =:])((?:\./|\../|/)?[^\"'<>\s]+\.m3u8(?:\?[^\"'<>\s]*)?)""",
+                                """(?:^|[\"' =:])(\.?\.?/[^\"'<>\s]+\.(?:m3u8|txt)(?:\?[^\"'<>\s]*)?)""",
                                 setOf(RegexOption.IGNORE_CASE)
                             )
                                 .find(normalizedBody)
@@ -2059,46 +2143,74 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                         if (!relativePlaylist.isNullOrBlank()) {
 
-                            val base =
-                                candidate.substringBeforeLast("/", candidate)
+                            try {
+                                val resolvedRelative =
+                                    URI(candidate)
+                                        .resolve(relativePlaylist)
+                                        .toString()
 
-                            val resolvedRelative =
-                                when {
-                                    relativePlaylist.startsWith("/") -> {
-                                        val origin =
-                                            Regex("^(https?://[^/]+)")
-                                                .find(candidate)
-                                                ?.groupValues
-                                                ?.getOrNull(1)
+                                println(
+                                    "HDFilmCehennemi: yanıttan göreli playlist bulundu -> " +
+                                        resolvedRelative
+                                )
 
-                                        if (origin.isNullOrBlank()) {
-                                            null
-                                        } else {
-                                            origin + relativePlaylist
-                                        }
-                                    }
-
-                                    relativePlaylist.startsWith("../") -> {
-                                        base.substringBeforeLast("/", base) +
-                                            "/" +
-                                            relativePlaylist.removePrefix("../")
-                                    }
-
-                                    relativePlaylist.startsWith("./") -> {
-                                        base + "/" +
-                                            relativePlaylist.removePrefix("./")
-                                    }
-
-                                    else -> {
-                                        base + "/" + relativePlaylist
-                                    }
-                                }
-
-                            if (!resolvedRelative.isNullOrBlank()) {
                                 queue.add(resolvedRelative)
                                 return@repeat
+                            } catch (error: Exception) {
+                                println(
+                                    "HDFilmCehennemi: göreli playlist çözülemedi -> " +
+                                        "${error::class.simpleName}: ${error.message}"
+                                )
                             }
                         }
+
+                        /*
+                         * JSON/JS içinde uzantısız ama açıkça playlist'e işaret
+                         * eden URL'leri yakala. Bu özellikle master.txt'in JSON
+                         * döndürdüğü durumlar için.
+                         */
+                        val genericUrlPattern =
+                            Regex(
+                                """https?://[^\"'`<>\s]+""",
+                                setOf(RegexOption.IGNORE_CASE)
+                            )
+
+                        val genericCandidates =
+                            genericUrlPattern
+                                .findAll(normalizedBody)
+                                .map {
+                                    it.value.trimEnd(
+                                        '\"', '\'', '`', ',', ';', ')', ']', '}'
+                                    )
+                                }
+                                .filter { value ->
+                                    value.contains("/hls/", ignoreCase = true) ||
+                                        value.contains("master", ignoreCase = true) ||
+                                        value.contains("playlist", ignoreCase = true) ||
+                                        value.contains("index", ignoreCase = true)
+                                }
+                                .distinct()
+                                .take(4)
+                                .toList()
+
+                        if (genericCandidates.isNotEmpty()) {
+
+                            println(
+                                "HDFilmCehennemi: generic playlist adayları -> " +
+                                    genericCandidates.joinToString(" | ")
+                            )
+
+                            genericCandidates.forEach {
+                                queue.add(it)
+                            }
+
+                            return@repeat
+                        }
+
+                        println(
+                            "HDFilmCehennemi: playlist yanıtında takip edilebilir HLS URL bulunamadı -> " +
+                                "status=$statusCode | content-type=$contentType"
+                        )
 
                     } catch (error: Exception) {
 

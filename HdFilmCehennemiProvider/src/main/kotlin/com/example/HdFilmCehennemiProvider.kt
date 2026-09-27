@@ -1576,7 +1576,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                         }
 
                         if (response.code !in 300..399) {
-                            return@repeat
+                            break
                         }
 
                     } catch (error: Exception) {
@@ -1584,7 +1584,7 @@ class HdFilmCehennemiProvider : MainAPI() {
                             "HDFilmCehennemi: RAPID DOWNLOAD hata -> " +
                                 "${error::class.simpleName}: ${error.message}"
                         )
-                        return@repeat
+                        break
                     }
                 }
 

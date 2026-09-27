@@ -1572,6 +1572,120 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 )
                             }
 
+                        /*
+                         * ------------------------------------------------
+                         * HARİCİ SCRIPT İNCELEMESİ
+                         *
+                         * rt6 inline HTML'de tanımlı değilse değer harici
+                         * JS dosyasından üretilebilir. Önce tüm script src
+                         * adreslerini çıkar, sonra özellikle rt6 geçen
+                         * dosyaları indirip çevresini logla.
+                         * ------------------------------------------------
+                         */
+                        val externalScriptUrls =
+                            playerDocument
+                                .select("script[src]")
+                                .mapNotNull { script ->
+                                    val src = script.attr("src").trim()
+                                    if (src.isBlank()) {
+                                        null
+                                    } else {
+                                        try {
+                                            URI(iframeUrl).resolve(src).toString()
+                                        } catch (_: Exception) {
+                                            null
+                                        }
+                                    }
+                                }
+                                .distinct()
+                                .take(30)
+
+                        println(
+                            "HDFilmCehennemi: RPLAYER external script sayısı = " +
+                                externalScriptUrls.size
+                        )
+
+                        externalScriptUrls.forEachIndexed { index, scriptUrl ->
+                            println(
+                                "HDFilmCehennemi: RPLAYER SCRIPT SRC[$index] -> " +
+                                    scriptUrl
+                            )
+                        }
+
+                        for ((index, scriptUrl) in externalScriptUrls.withIndex()) {
+                            try {
+                                val scriptResponse =
+                                    app.get(
+                                        scriptUrl,
+                                        headers = mapOf(
+                                            "User-Agent" to userAgent,
+                                            "Accept" to "*/*",
+                                            "Referer" to iframeUrl
+                                        )
+                                    )
+
+                                val scriptBody = scriptResponse.text
+
+                                println(
+                                    "HDFilmCehennemi: RPLAYER SCRIPT HTTP[$index] -> " +
+                                        scriptResponse.code +
+                                        " | bytes=" +
+                                        scriptBody.length +
+                                        " | url=" +
+                                        scriptUrl
+                                )
+
+                                if (scriptBody.contains("rt6", ignoreCase = false)) {
+                                    val positions =
+                                        Regex("rt6")
+                                            .findAll(scriptBody)
+                                            .map { it.range.first }
+                                            .take(20)
+                                            .toList()
+
+                                    println(
+                                        "HDFilmCehennemi: RPLAYER rt6 bulundu -> " +
+                                            "script=$scriptUrl | adet=${positions.size}"
+                                    )
+
+                                    positions.forEach { position ->
+                                        val start = maxOf(0, position - 800)
+                                        val end = minOf(scriptBody.length, position + 1600)
+
+                                        println(
+                                            "HDFilmCehennemi: RPLAYER rt6 context -> " +
+                                                scriptBody.substring(start, end)
+                                                    .replace("\n", " ")
+                                                    .replace("\r", " ")
+                                                    .replace(Regex("\\s+"), " ")
+                                        )
+                                    }
+                                }
+
+                                val externalInteresting =
+                                    Regex(
+                                        """(?i)(rt6|m3u8|master\.txt|playmix|jwplayer|sources|file\s*:)"""
+                                    ).containsMatchIn(scriptBody)
+
+                                if (externalInteresting) {
+                                    println(
+                                        "HDFilmCehennemi: RPLAYER harici script ilginç -> " +
+                                            scriptBody.take(4000)
+                                                .replace("\n", " ")
+                                                .replace("\r", " ")
+                                                .replace(Regex("\\s+"), " ")
+                                    )
+                                }
+                            } catch (error: Exception) {
+                                println(
+                                    "HDFilmCehennemi: RPLAYER SCRIPT GET hatası -> " +
+                                        scriptUrl +
+                                        " | " +
+                                        "${error::class.simpleName}: ${error.message}"
+                                )
+                            }
+                        }
+
                         val urlCandidates =
                             Regex(
                                 """https?://[^\s"'<>\\]+"""

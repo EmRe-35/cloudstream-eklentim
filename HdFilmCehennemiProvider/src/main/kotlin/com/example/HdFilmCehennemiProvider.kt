@@ -1582,21 +1582,60 @@ class HdFilmCehennemiProvider : MainAPI() {
                          * dosyaları indirip çevresini logla.
                          * ------------------------------------------------
                          */
-                        /* INLINE SCRIPT[3] HEDEF ANALIZI */
-                        playerDocument.select("script").forEachIndexed { scriptIndex, script ->
-                            val scriptText = script.data().ifBlank { script.html() }
-                            if (scriptIndex == 3 || scriptText.contains("rt6", ignoreCase = true)) {
-                                val keywords = listOf("rt6", "playmix", "master.txt", "contentUrl", "ergv8H1E1Or", "m3u8", "sources", "file:")
-                                println("HDFilmCehennemi: INLINE SCRIPT TARGET[$scriptIndex] bytes=${scriptText.length}")
+                        /* HAM HTML SCRIPT ANALIZI */
+                        val rawScriptBlocks = Regex(
+                            "(?is)<script\\b[^>]*>(.*?)</script>"
+                        ).findAll(html).map { it.groupValues[1] }.toList()
+
+                        println(
+                            "HDFilmCehennemi: RPLAYER HAM SCRIPT SAYISI = " +
+                                rawScriptBlocks.size
+                        )
+
+                        rawScriptBlocks.forEachIndexed { scriptIndex, scriptText ->
+                            if (scriptIndex == 3 || Regex(
+                                    "(?i)(rt6|playmix|master\\.txt|contentUrl|ergv8H1E1Or|m3u8|sources|file\\s*:)"
+                                ).containsMatchIn(scriptText)
+                            ) {
+                                println(
+                                    "HDFilmCehennemi: HAM SCRIPT[$scriptIndex] bytes=${scriptText.length}"
+                                )
+
+                                val keywords = listOf(
+                                    "rt6",
+                                    "playmix",
+                                    "master.txt",
+                                    "contentUrl",
+                                    "ergv8H1E1Or",
+                                    "m3u8",
+                                    "sources",
+                                    "file:"
+                                )
+
                                 for (keyword in keywords) {
                                     var from = 0
                                     var count = 0
+
                                     while (count < 10) {
-                                        val pos = scriptText.indexOf(keyword, from, ignoreCase = true)
+                                        val pos = scriptText.indexOf(
+                                            keyword,
+                                            from,
+                                            ignoreCase = true
+                                        )
+
                                         if (pos < 0) break
+
                                         val start = maxOf(0, pos - 2000)
                                         val end = minOf(scriptText.length, pos + 3000)
-                                        println("HDFilmCehennemi: INLINE TARGET[$scriptIndex][$keyword] -> " + scriptText.substring(start, end).replace("\n", " ").replace("\r", " ").replace(Regex("\\s+"), " "))
+
+                                        println(
+                                            "HDFilmCehennemi: HAM TARGET[$scriptIndex][$keyword] -> " +
+                                                scriptText.substring(start, end)
+                                                    .replace("\n", " ")
+                                                    .replace("\r", " ")
+                                                    .replace(Regex("\\s+"), " ")
+                                        )
+
                                         from = pos + keyword.length
                                         count++
                                     }

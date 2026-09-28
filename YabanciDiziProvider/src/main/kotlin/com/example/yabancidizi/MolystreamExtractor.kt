@@ -20,17 +20,20 @@ class MolystreamExtractor : ExtractorApi() {
             return emptyList()
         }
 
-        // .m3u8 uzantılı linkleri HTML içinde ara
         val m3u8Regex = Regex("""https?://[^"'\s\\]+?\.m3u8[^"'\s\\]*""")
         m3u8Regex.findAll(html).forEach { match ->
             links.add(
                 newExtractorLink(
                     source = this.name,
                     name = "Molystream",
-                    url = match.value,
-                    referer = this.mainUrl
+                    url = match.value
                 ) {
                     this.quality = Qualities.Unknown.value
+                    this.referer = this@MolystreamExtractor.mainUrl
+                    this.headers = mapOf(
+                        "Referer" to this@MolystreamExtractor.mainUrl,
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    )
                 }
             )
         }

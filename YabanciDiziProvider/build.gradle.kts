@@ -1,16 +1,16 @@
-val pluginClass = "com.example.HdFilmCehennemiPlugin"
+val pluginClass = "com.example.yabancidizi.YabanciDiziProvider"
 
 version = 1
 
 cloudstream {
     language = "tr"
-    description = "HDFilmCehennemi film ve dizi eklentisi"
+    description = "yabancidizi.news sitesi için Cloudstream eklentisi"
     authors = listOf("EmRe-35")
     status = 1
-    tvTypes = listOf("Movie", "TvSeries")
-    iconUrl = "https://www.hdfilmcehennemi.nl/favicon.ico"
+    tvTypes = listOf("TvSeries", "Movie")
+    iconUrl = "https://yabancidizi.news/favicon.ico"
 }
 
 dependencies {
-    implementation("org.jspecify:jspecify:1.0.0")
+    // Jsoup zaten Cloudstream içinde var, ayrıca eklemeye gerek yok
 }

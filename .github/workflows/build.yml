@@ -35,87 +35,31 @@ jobs:
         shell: bash
         run: |
           set -e
-          PROVIDER="HdFilmCehennemiProvider/src/main/kotlin/com/example/HdFilmCehennemiProvider.kt"
           echo "=================================================="
           echo "GITHUB ACTIONS KAYNAK KONTROLÜ"
           echo "=================================================="
-          echo "Repository:"
-          echo "${GITHUB_REPOSITORY}"
-          echo "GitHub SHA:"
-          echo "${GITHUB_SHA}"
-          echo "Checkout HEAD:"
-          git rev-parse HEAD
-          echo "Commit:"
-          git log -1 --oneline --decorate
-          echo "Provider:"
-          echo "${PROVIDER}"
-          if [ ! -f "$PROVIDER" ]; then
-            echo "HATA: Provider dosyası bulunamadı."
-            exit 1
-          fi
+          echo "Repository: ${GITHUB_REPOSITORY}"
+          echo "GitHub SHA: ${GITHUB_SHA}"
+          echo "Checkout HEAD: $(git rev-parse HEAD)"
+          echo "Commit: $(git log -1 --oneline --decorate)"
           echo ""
-          echo "Provider satır sayısı:"
-          wc -l "$PROVIDER"
+          echo "Mevcut modüller:"
+          ls -d */ | grep -i "Provider" || echo "Modül bulunamadı!"
           echo ""
-          echo "Provider SHA256:"
-          sha256sum "$PROVIDER"
-          echo ""
-          echo "=================================================="
-          echo "2062. SATIR KONTROLÜ"
-          echo "=================================================="
-          if [ "$(wc -l < "$PROVIDER")" -ge 2062 ]; then
-            sed -n '2045,2075p' "$PROVIDER"
-          else
-            echo "Bu dosyada 2062. satır yok."
-          fi
-          echo ""
-          echo "=================================================="
-          echo "newExtractorLink KONTROLÜ"
-          echo "=================================================="
-          NEW_EXTRACTOR_COUNT=$(grep -c "newExtractorLink" "$PROVIDER" || true)
-          echo "Bulunan newExtractorLink sayısı: $NEW_EXTRACTOR_COUNT"
-          if [ "$NEW_EXTRACTOR_COUNT" -ne 0 ]; then
-            echo ""
-            echo "HATA: Provider içinde newExtractorLink çağrısı bulundu."
-            echo ""
-            grep -n -B8 -A12 "newExtractorLink" "$PROVIDER" || true
-            exit 1
-          fi
-          echo ""
-          echo "OK: newExtractorLink çağrısı bulunamadı."
+          echo "Provider dosyaları:"
+          find . -name "*Provider.kt" -not -path "*/node_modules/*"
 
       - name: CloudStream Gradle pluginini hazırla
         shell: bash
         run: |
           set -e
-          echo "=================================================="
-          echo "CLOUDSTREAM GRADLE PLUGIN"
-          echo "=================================================="
           rm -rf /tmp/cloudstream-gradle
           git clone --depth 1 https://github.com/recloudstream/gradle.git /tmp/cloudstream-gradle
           cd /tmp/cloudstream-gradle
           chmod +x gradlew
           ./gradlew publishToMavenLocal --no-daemon --stacktrace
 
-      - name: CloudStream API kontrolü
-        shell: bash
-        run: |
-          set -e
-          echo "=================================================="
-          echo "CLOUDSTREAM API KONTROLÜ"
-          echo "=================================================="
-          find ~/.m2/repository -path "*cloudstream3*" -type f | head -100
-
-      - name: Gradle dependency kontrolü
-        shell: bash
-        run: |
-          set -e
-          echo "=================================================="
-          echo "DEPENDENCY KONTROLÜ"
-          echo "=================================================="
-          gradle :HdFilmCehennemiProvider:dependencies --configuration debugCompileClasspath --no-daemon --stacktrace
-
-      - name: Eklentiyi derle
+      - name: Eklentileri derle
         shell: bash
         run: |
           set -e

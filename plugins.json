@@ -1,0 +1,44 @@
+[
+    {
+        "iconUrl": "https://www.hdfilmcehennemi.nl/favicon.ico",
+        "fileHash": "sha256-52bd321a75f9224cfe5f05c7efe5f48037cb3f79090f5bc288a573042380b4b1",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/EmRe-35/cloudstream-eklentim",
+        "fileSize": 66774,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "EmRe-35"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "HdFilmCehennemiProvider",
+        "description": "HDFilmCehennemi film ve dizi eklentisi",
+        "url": "https://raw.githubusercontent.com/EmRe-35/cloudstream-eklentim/builds/HdFilmCehennemiProvider.cs3",
+        "name": "HdFilmCehennemiProvider"
+    },
+    {
+        "iconUrl": "https://yabancidizi.news/favicon.ico",
+        "fileHash": "sha256-04b812f90651555422ff88677bfdfc60f6ef94a8dd888c11ed9e61f1af2f2a9b",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/EmRe-35/cloudstream-eklentim",
+        "fileSize": 6736,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "EmRe-35"
+        ],
+        "tvTypes": [
+            "TvSeries",
+            "Movie"
+        ],
+        "version": 1,
+        "internalName": "YabanciDiziProvider",
+        "description": "yabancidizi.news sitesi i\u00e7in Cloudstream eklentisi",
+        "url": "https://raw.githubusercontent.com/EmRe-35/cloudstream-eklentim/builds/YabanciDiziProvider.cs3",
+        "name": "YabanciDiziProvider"
+    }
+]

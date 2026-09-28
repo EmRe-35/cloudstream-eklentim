@@ -1,0 +1,21 @@
+{
+    "iconUrl": "https://www.hdfilmcehennemi.nl/favicon.ico",
+    "fileHash": "sha256-52bd321a75f9224cfe5f05c7efe5f48037cb3f79090f5bc288a573042380b4b1",
+    "apiVersion": 1,
+    "repositoryUrl": "https://github.com/EmRe-35/cloudstream-eklentim",
+    "fileSize": 66774,
+    "status": 1,
+    "language": "tr",
+    "authors": [
+        "EmRe-35"
+    ],
+    "tvTypes": [
+        "Movie",
+        "TvSeries"
+    ],
+    "version": 1,
+    "internalName": "HdFilmCehennemiProvider",
+    "description": "HDFilmCehennemi film ve dizi eklentisi",
+    "url": "https://raw.githubusercontent.com/EmRe-35/cloudstream-eklentim/builds/HdFilmCehennemiProvider.cs3",
+    "name": "HdFilmCehennemiProvider"
+}

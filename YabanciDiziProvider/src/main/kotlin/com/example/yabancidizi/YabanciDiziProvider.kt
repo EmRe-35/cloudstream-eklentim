@@ -126,48 +126,54 @@ class YabanciDiziProvider : MainAPI() {
     }
 
     private suspend fun parseEpisodes(document: org.jsoup.nodes.Document, seriesUrl: String): List<Episode> {
-        val episodes = mutableListOf<Episode>()
+    val episodes = mutableListOf<Episode>()
+    val episodeLinks = mutableListOf<org.jsoup.nodes.Element>()
 
-        // Doğrudan bölüm linklerini ara
-        var episodeLinks = document.select("a[href*=/bolum-]")
+    // Doğrudan bölüm linklerini ara
+    episodeLinks.addAll(document.select("a[href*=/bolum-]"))
 
-        // Eğer sezon linki varsa, sezon sayfasına gidip bölümleri çek
-        if (episodeLinks.isEmpty()) {
-            val seasonLinks = document.select("a[href*=/sezon-]")
-                .map { it.attr("href") }
-                .distinct()
+    // Eğer hiç bölüm linki yoksa, sezon sayfalarına gidip bölümleri çek
+    if (episodeLinks.isEmpty()) {
+        val seasonLinks = document.select("a[href*=/sezon-]")
+            .map { it.attr("href") }
+            .distinct()
 
-            seasonLinks.forEach { seasonHref ->
-                val seasonUrl = if (seasonHref.startsWith("http")) seasonHref else "$mainUrl/${seasonHref.trimStart('/')}"
-                val seasonDoc = try { app.get(seasonUrl).document } catch (e: Exception) { return@forEach }
-                episodeLinks = episodeLinks + seasonDoc.select("a[href*=/bolum-]")
+        seasonLinks.forEach { seasonHref ->
+            val seasonUrl = if (seasonHref.startsWith("http")) seasonHref
+                            else "$mainUrl/${seasonHref.trimStart('/')}"
+            val seasonDoc = try {
+                app.get(seasonUrl).document
+            } catch (e: Exception) {
+                return@forEach
             }
+            episodeLinks.addAll(seasonDoc.select("a[href*=/bolum-]"))
         }
-
-        episodeLinks.distinctBy { it.attr("href") }.forEachIndexed { index, el ->
-            val href = el.attr("href")
-            val epUrl = if (href.startsWith("http")) href else "$mainUrl/${href.trimStart('/')}"
-
-            // Bölüm numarasını URL'den çıkar
-            val episodeNumber = Regex("""bolum-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
-            val seasonNumber = Regex("""sezon-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
-
-            val epTitle = el.selectFirst("h2, h6, .episode-no")?.text()?.trim()
-                ?: el.text().trim().take(50)
-
-            episodes.add(
-                newEpisode(epUrl) {
-                    this.name = epTitle.ifBlank {
-                        "S${seasonNumber ?: 1} B${episodeNumber ?: (index + 1)}"
-                    }
-                    this.episode = episodeNumber ?: (index + 1)
-                    this.season = seasonNumber ?: 1
-                }
-            )
-        }
-
-        return episodes
     }
+
+    episodeLinks.distinctBy { it.attr("href") }.forEachIndexed { index, el ->
+        val href = el.attr("href")
+        val epUrl = if (href.startsWith("http")) href
+                    else "$mainUrl/${href.trimStart('/')}"
+
+        val episodeNumber = Regex("""bolum-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
+        val seasonNumber = Regex("""sezon-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
+
+        val epTitle = el.selectFirst("h2, h6, .episode-no")?.text()?.trim()
+            ?: el.text().trim().take(50)
+
+        episodes.add(
+            newEpisode(epUrl) {
+                this.name = epTitle.ifBlank {
+                    "S${seasonNumber ?: 1} B${episodeNumber ?: (index + 1)}"
+                }
+                this.episode = episodeNumber ?: (index + 1)
+                this.season = seasonNumber ?: 1
+            }
+        )
+    }
+
+    return episodes
+}
 
     override suspend fun loadLinks(
         data: String,

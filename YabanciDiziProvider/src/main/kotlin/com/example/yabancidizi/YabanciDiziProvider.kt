@@ -1,8 +1,16 @@
 package com.example.yabancidizi
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
+
+@CloudstreamPlugin
+class YabanciDiziProvider : MainAPI() {
+    override var mainUrl = "https://yabancidizi.news"
+    override var name = "Yabancı Dizi"
+    // ... geri kalan kod aynı
+}
 
 class YabanciDiziProvider : MainAPI() {
     override var mainUrl = "https://yabancidizi.news"

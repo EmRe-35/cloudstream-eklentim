@@ -15,159 +15,21 @@ class YabanciDiziProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
     override val mainPage = mainPageOf(
-        "" to "Anasayfa",
-        "dizi-izle-hd" to "TV Dizileri",
-        "film-izle-hd" to "Sinema Filmleri",
-        "trends" to "Trendler",
-        "kesfet" to "Keşfet"
+        "" to "Anasayfa"
     )
 
+    // GEÇİCİ TEST: Boş liste dön. Eklentinin yüklenip yüklenmediğini test ediyoruz.
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = if (request.data.isEmpty()) mainUrl else "$mainUrl/${request.data}"
-        val document = app.get(url).document
-
         val items = mutableListOf<HomePageList>()
-
-        val posters = (
-            document.select("div.poster-media a") +
-            document.select("li.mofy-moviesli a") +
-            document.select("ul.clearfix li a[href*=/dizi/], ul.clearfix li a[href*=/film/]") +
-            document.select("div.featured-segment a")
-        )
-            .mapNotNull { convertToSearchResponse(it) }
-            .distinctBy { it.url }
-
-        if (posters.isNotEmpty()) {
-            items.add(HomePageList(request.name, posters))
-        }
-
         return newHomePageResponse(items, hasNext = false)
     }
 
-    private fun convertToSearchResponse(element: Element): SearchResponse? {
-        val href = element.attr("href").takeIf { it.isNotBlank() && !it.startsWith("#") } ?: return null
-        val title = element.attr("title").takeIf { it.isNotBlank() }
-            ?: element.selectFirst("h2")?.text()?.trim()
-            ?: element.selectFirst("h6")?.text()?.trim()
-            ?: element.selectFirst("img")?.attr("alt")?.trim()
-            ?: return null
-
-        val poster = element.selectFirst("img")?.let { img ->
-            img.attr("data-src").ifBlank { img.attr("src") }
-        }
-
-        val fullUrl = if (href.startsWith("http")) href else "$mainUrl/${href.trimStart('/')}"
-        val isMovie = href.contains("/film/")
-
-        return newMovieSearchResponse(
-            title,
-            fullUrl,
-            if (isMovie) TvType.Movie else TvType.TvSeries
-        ) {
-            this.posterUrl = poster?.let {
-                if (it.startsWith("http")) it else "$mainUrl/${it.trimStart('/')}"
-            }
-        }
-    }
-
     override suspend fun search(query: String): List<SearchResponse> {
-        val searchUrl = "$mainUrl/search?q=${query.replace(" ", "+")}"
-        return try {
-            val document = app.get(searchUrl).document
-            (document.select("a[href*=/dizi/], a[href*=/film/]") +
-             document.select("div.search-result a, li.result a"))
-                .mapNotNull { convertToSearchResponse(it) }
-                .distinctBy { it.url }
-        } catch (e: Exception) {
-            emptyList()
-        }
+        return emptyList()
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
-
-        val title = document.selectFirst("h1")?.text()?.trim()
-            ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.trim()
-            ?: return null
-
-        val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
-            ?: document.selectFirst("div.poster img")?.attr("src")
-
-        val description = document.selectFirst("meta[name=description]")?.attr("content")?.trim()
-            ?: document.selectFirst("div.description, p.description, div.summary")?.text()?.trim()
-
-        val isMovie = url.contains("/film/")
-
-        val episodes = if (isMovie) {
-            listOf(
-                newEpisode(url) {
-                    this.name = title
-                    this.episode = 1
-                }
-            )
-        } else {
-            parseEpisodes(document, url)
-        }
-
-        return newTvSeriesLoadResponse(
-            title,
-            url,
-            if (isMovie) TvType.Movie else TvType.TvSeries,
-            episodes
-        ) {
-            this.posterUrl = poster?.let {
-                if (it.startsWith("http")) it else "$mainUrl/${it.trimStart('/')}"
-            }
-            this.plot = description
-        }
-    }
-
-    private suspend fun parseEpisodes(document: org.jsoup.nodes.Document, seriesUrl: String): List<Episode> {
-        val episodes = mutableListOf<Episode>()
-        val episodeLinks = mutableListOf<Element>()
-
-        episodeLinks.addAll(document.select("a[href*=/bolum-]"))
-
-        if (episodeLinks.isEmpty()) {
-            val seasonLinks = document.select("a[href*=/sezon-]")
-                .map { it.attr("href") }
-                .distinct()
-
-            for (seasonHref in seasonLinks) {
-                val seasonUrl = if (seasonHref.startsWith("http")) seasonHref
-                                else "$mainUrl/${seasonHref.trimStart('/')}"
-                try {
-                    val seasonDoc = app.get(seasonUrl).document
-                    episodeLinks.addAll(seasonDoc.select("a[href*=/bolum-]"))
-                } catch (e: Exception) {
-                    // Sezon sayfası yüklenemezse atla
-                }
-            }
-        }
-
-        episodeLinks.distinctBy { it.attr("href") }.forEachIndexed { index, el ->
-            val href = el.attr("href")
-            val epUrl = if (href.startsWith("http")) href
-                        else "$mainUrl/${href.trimStart('/')}"
-
-            val episodeNumber = Regex("""bolum-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
-            val seasonNumber = Regex("""sezon-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
-
-            val epTitle = el.selectFirst("h2, h6, .episode-no")?.text()?.trim()
-                ?: el.text().trim().take(50)
-
-            episodes.add(
-                newEpisode(epUrl) {
-                    this.name = epTitle.ifBlank {
-                        "S${seasonNumber ?: 1} B${episodeNumber ?: (index + 1)}"
-                    }
-                    this.episode = episodeNumber ?: (index + 1)
-                    this.season = seasonNumber ?: 1
-                }
-            )
-        }
-
-        return episodes
+        return null
     }
 
     override suspend fun loadLinks(
@@ -176,18 +38,6 @@ class YabanciDiziProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
-        var found = false
-
-        document.select("iframe[src], iframe[data-src]").forEach { iframe ->
-            val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }
-            if (src.isNotBlank() && (src.startsWith("http") || src.startsWith("//"))) {
-                val fullSrc = if (src.startsWith("//")) "https:$src" else src
-                loadExtractor(fullSrc, data, subtitleCallback, callback)
-                found = true
-            }
-        }
-
-        return found
+        return false
     }
 }

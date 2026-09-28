@@ -1237,15 +1237,28 @@ class HdFilmCehennemiProvider : MainAPI() {
              *   function vwt(jkg) { ... }
              *   var p3k = vwt("...#...".split("#"));
              *
+             * DİKKAT: Site ayraç karakterini değiştirebiliyor.
+             * Eski sürümlerde "#", güncel sürümde "~" (tilde)
+             * kullanılıyor. Bu nedenle ayraç parametre olarak
+             * dışarıdan veriliyor.
+             *
              * Bu ikinci katman klasik Dean-Edwards packer'dan ayrıdır.
              * Logcat'te görülen örnekte; Base64, reverse, alfabetik
              * kaydırma, deterministik shuffle ve rolling XOR uygulanıyor.
              */
-            fun decodeRplayerArray(encoded: String): String? {
+            fun decodeRplayerArray(
+                encoded: String,
+                separator: String = "~"
+            ): String? {
                 return try {
+                    /*
+                     * Güncel rplayer array şemasında ayraç "~" (tilde).
+                     * Eski sürümlerde "#" idi. Çağıran taraf yakaladığı
+                     * ayracı verirse onu kullanıyoruz.
+                     */
                     val parts =
                         encoded
-                            .split("#")
+                            .split(separator)
                             .toMutableList()
 
                     if (parts.size < 3) {
@@ -1494,6 +1507,13 @@ class HdFilmCehennemiProvider : MainAPI() {
                             ) and 255
                     }
 
+                    println(
+                        "HDFilmCehennemi: CUSTOM ARRAY decode tamam -> " +
+                            "parts=${parts.size} | sep='$separator' | " +
+                            "output len=${output.length} | " +
+                            "prefix=${output.toString().take(200)}"
+                    )
+
                     output.toString()
                 } catch (error: Exception) {
                     println(
@@ -1510,34 +1530,40 @@ class HdFilmCehennemiProvider : MainAPI() {
                 val results =
                     linkedSetOf<String>()
 
+                /*
+                 * Ayraç karakteri site tarafından değiştirilebiliyor:
+                 * eski sürümlerde "#", güncel sürümde "~".
+                 * Bu yüzden ayracı da yakalıyoruz.
+                 */
                 val callRegex =
                     Regex(
-                        """(?s)(?:var\s+)?\w+\s*=\s*\w+\(\s*["']([^"']{20,})["']\s*\.split\(\s*["']#["']\s*\)\s*\)"""
+                        """(?s)(?:var\s+)?\w+\s*=\s*\w+\(\s*["']([^"']{20,})["']\s*\.split\(\s*["']([^"']+)["']\s*\)\s*\)"""
                     )
 
                 for (
-                    match in
-                    callRegex.findAll(decodedJs)
+                    match in callRegex.findAll(decodedJs)
                 ) {
                     val encoded =
                         match.groupValues[1]
 
-                    /*
-                     * Yalnızca # parçalı array şemasını dene.
-                     * Yanlış decoder sonucu URL değilse sessizce geç.
-                     */
-                    val decoded =
-                        decodeRplayerArray(
-                            encoded
-                        )
+                    val separator =
+                        match.groupValues
+                            .getOrNull(2)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "~"
 
                     println(
                         "HDFilmCehennemi: CUSTOM ARRAY candidate -> " +
-                            "parts=" +
-                            encoded.count { it == '#' } +
-                            " separators | decoded=" +
-                            (decoded?.length ?: 0)
+                            "sep='$separator' | parts=" +
+                            encoded.split(separator).size +
+                            " | len=${encoded.length}"
                     )
+
+                    val decoded =
+                        decodeRplayerArray(
+                            encoded,
+                            separator
+                        )
 
                     if (
                         decoded.isNullOrBlank()

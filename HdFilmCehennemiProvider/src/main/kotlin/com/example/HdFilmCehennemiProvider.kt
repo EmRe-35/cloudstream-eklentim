@@ -810,8 +810,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             /*
              * ========================================================
              * ROLLING XOR
-             *
-             * Güncel decoder formatında kullanılıyor.
              * ========================================================
              */
 
@@ -872,11 +870,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 val parts: List<String>
             )
 
-            /*
-             * Fonksiyon gövdesini dengeli süslü parantezlerle bul.
-             * Böylece decoder içerisinde for/if blokları olduğunda
-             * regex'in erken bitmesini engelliyoruz.
-             */
             fun extractFunctionBody(
                 html: String,
                 functionStart: Int
@@ -949,9 +942,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             functionMatch.range.first
                         ) ?: continue
 
-                    /*
-                     * dc_xxx(["...","..."])
-                     */
                     val callRegex =
                         Regex(
                             Regex.escape(functionName) +
@@ -981,9 +971,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                     val steps =
                         mutableListOf<DecodeStep>()
 
-                    /*
-                     * Adımları gövdedeki sıralarına göre buluyoruz.
-                     */
                     data class Candidate(
                         val position: Int,
                         val step: DecodeStep
@@ -992,9 +979,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                     val candidates =
                         mutableListOf<Candidate>()
 
-                    /*
-                     * Base64
-                     */
                     val base64Regex =
                         Regex(
                             """=\s*atob\(\s*result\s*\)"""
@@ -1012,9 +996,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         )
                     }
 
-                    /*
-                     * Reverse
-                     */
                     val reverseRegex =
                         Regex(
                             """result\.split\(['"]['"]\)\.reverse\(\)\.join\(['"]['"]\)"""
@@ -1032,9 +1013,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         )
                     }
 
-                    /*
-                     * ROT-N
-                     */
                     val rotRegex =
                         Regex(
                             """\(\s*o\s*-\s*base\s*\+\s*(\d+)\s*\)\s*%\s*26"""
@@ -1062,11 +1040,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         )
                     }
 
-                    /*
-                     * Character unmix.
-                     *
-                     * Hem yeni hem eski formu destekle.
-                     */
                     val unmixRegex =
                         Regex(
                             """charCode\s*-\s*\(\s*(\d+)\s*%\s*\(\s*i\s*\+\s*(\d+)\s*\)"""
@@ -1102,9 +1075,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         )
                     }
 
-                    /*
-                     * Rolling XOR.
-                     */
                     val xorRegex =
                         Regex(
                             """var\s+acc\s*=\s*(\d+)[\s\S]{0,300}?acc\s*=\s*\(\s*acc\s*\+\s*(\d+)\s*\)\s*%\s*256"""
@@ -1164,12 +1134,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 return decoders
             }
 
-            /*
-             * ========================================================
-             * INLINE DECODER UYGULA
-             * ========================================================
-             */
-
             fun applyDecodeSteps(
                 parts: List<String>,
                 steps: List<DecodeStep>
@@ -1221,41 +1185,15 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ========================================================
-             * LEGACY JS PACKER
-             * ========================================================
-             */
-
-
-            /*
-             * ========================================================
              * CUSTOM RPLAYER ARRAY DECODER
              * ========================================================
-             *
-             * Güncel hdfilmcehennemi.mobi player'ında unpack edilmiş
-             * script içinde şu yapıya rastlandı:
-             *
-             *   function vwt(jkg) { ... }
-             *   var p3k = vwt("...#...".split("#"));
-             *
-             * DİKKAT: Site ayraç karakterini değiştirebiliyor.
-             * Eski sürümlerde "#", güncel sürümde "~" (tilde)
-             * kullanılıyor. Bu nedenle ayraç parametre olarak
-             * dışarıdan veriliyor.
-             *
-             * Bu ikinci katman klasik Dean-Edwards packer'dan ayrıdır.
-             * Logcat'te görülen örnekte; Base64, reverse, alfabetik
-             * kaydırma, deterministik shuffle ve rolling XOR uygulanıyor.
              */
+
             fun decodeRplayerArray(
                 encoded: String,
                 separator: String = "~"
             ): String? {
                 return try {
-                    /*
-                     * Güncel rplayer array şemasında ayraç "~" (tilde).
-                     * Eski sürümlerde "#" idi. Çağıran taraf yakaladığı
-                     * ayracı verirse onu kullanıyoruz.
-                     */
                     val parts =
                         encoded
                             .split(separator)
@@ -1346,12 +1284,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             ) % 65519L +
                                 1L
 
-                    /*
-                     * JS:
-                     * for(n=dauei.length-1;n>=0;n--){
-                     *   ...
-                     * }
-                     */
                     for (
                         index in dauei.indices.reversed()
                     ) {
@@ -1530,11 +1462,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 val results =
                     linkedSetOf<String>()
 
-                /*
-                 * Ayraç karakteri site tarafından değiştirilebiliyor:
-                 * eski sürümlerde "#", güncel sürümde "~".
-                 * Bu yüzden ayracı da yakalıyoruz.
-                 */
                 val callRegex =
                     Regex(
                         """(?s)(?:var\s+)?\w+\s*=\s*\w+\(\s*["']([^"']{20,})["']\s*\.split\(\s*["']([^"']+)["']\s*\)\s*\)"""
@@ -1681,12 +1608,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 }
             }
 
-            /*
-             * ========================================================
-             * ESKİ DECODE VARYANTLARI
-             * ========================================================
-             */
-
             fun decodeVariant1(
                 value: String
             ): String {
@@ -1803,17 +1724,6 @@ class HdFilmCehennemiProvider : MainAPI() {
             /*
              * ========================================================
              * RAPIDRAME DOWNLOAD ÇÖZÜCÜ
-             *
-             * Güncel RPLAYER sayfasında gerçek filme ait kimlik:
-             *   /rplayer/{id}/
-             *
-             * Aynı kimlik download sunucusunda:
-             *   https://hdfilmcehennemi.download/download/{id}
-             *
-             * Önceki sürüm bu adresi sadece logluyordu ve daha sonra
-             * stale bir playmix master.txt adresine düşüyordu. Burada
-             * redirect zincirini, m3u8 cevabını ve HTML/JSON içindeki
-             * gerçek medya URL'sini doğrudan çözüyoruz.
              * ========================================================
              */
 
@@ -1991,17 +1901,10 @@ class HdFilmCehennemiProvider : MainAPI() {
              * ========================================================
              */
 
-            /* PACKED JS METINSEL AÇICI */
             fun unpackPackedJavaScript(packed: String): String? {
                 return try {
                     var current = packed
 
-                    /*
-                     * Güncel player'da packed JS bir kez daha packed
-                     * eval içerebiliyor. Bu nedenle aynı çözümü birkaç
-                     * katman boyunca uygula. Normal tek katmanlı scriptlerde
-                     * yalnızca ilk tur çalışır.
-                     */
                     repeat(4) { layer ->
                         val marker = "eval(function(p,a,c,k,e,d)"
                         val start = current.indexOf(marker)
@@ -2230,9 +2133,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 ignoreCase = true
                             )
 
-                    /*
-                     * Ana site referer'ı ile iframe'i al.
-                     */
                     val iframeReferer =
                         "$mainUrl/"
 
@@ -2279,15 +2179,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 "prefix=${compact.take(120)}"
                         )
 
-                        /*
-                         * qqxl1 / kp0y zincirini özellikle yakala.
-                         *
-                         * Güncel RPLAYER'da player config:
-                         *     sources: [{file: qqxl1, type: "hls"}]
-                         *
-                         * qqxl1 ise başka bir inline script içinde
-                         * dinamik olarak üretiliyor.
-                         */
                         val sourceChain =
                             listOf(
                                 "qqxl1",
@@ -2325,11 +2216,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 )
                             }
 
-                            /*
-                             * Script 9 gibi orta boy inline scriptlerde
-                             * bağlamın tamamını görmek için ayrıca parçalı
-                             * dump al.
-                             */
                             if (
                                 scriptBody.length <= 20000 &&
                                 (
@@ -2367,17 +2253,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             " | url=" +
                             iframeUrl
                     )
-
-                    /*
-                     * ------------------------------------------------
-                     * RPLAYER TEŞHİSİ
-                     *
-                     * Güncel sitede /video/{id}/ endpoint'i gerçek
-                     * iframe'i /rplayer/{token}/ olarak döndürüyor.
-                     * Bu sayfanın video adresi doğrudan HTML'de olmayabilir;
-                     * JS/player config içinden üretilebilir.
-                     * ------------------------------------------------
-                     */
 
                     if (iframeIsRapid) {
 
@@ -2475,17 +2350,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 )
                             }
 
-                        /*
-                         * ------------------------------------------------
-                         * HARİCİ SCRIPT İNCELEMESİ
-                         *
-                         * rt6 inline HTML'de tanımlı değilse değer harici
-                         * JS dosyasından üretilebilir. Önce tüm script src
-                         * adreslerini çıkar, sonra özellikle rt6 geçen
-                         * dosyaları indirip çevresini logla.
-                         * ------------------------------------------------
-                         */
-                        /* INLINE SCRIPT[3] HEDEF ANALIZI */
                         playerDocument.select("script").forEachIndexed { scriptIndex, script ->
                             val scriptText = script.data().ifBlank { script.html() }
                             if (scriptIndex == 3 || scriptText.contains("rt6", ignoreCase = true)) {
@@ -2661,17 +2525,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         return null
                     }
 
-                    /*
-                     * ------------------------------------------------
-                     * 1. RAPIDRAME DOWNLOAD ENDPOINT
-                     * ------------------------------------------------
-                     *
-                     * Önce film kimliğine bağlı download endpoint'ini
-                     * çöz. Böylece aşağıdaki genel HTML/decoder taraması
-                     * stale master.txt seçse bile gerçek kaynak öncelikli
-                     * olur.
-                     */
-
                     if (iframeIsRapid) {
                         resolveRapidDownload(iframeUrl)?.let {
                             println(
@@ -2680,11 +2533,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             return it
                         }
 
-                        /*
-                         * Rapidrame HTML'i aynı film için bir hdfilmcehennemi.mobi
-                         * embed adresi de taşıyor. master.txt stale/404 olduğunda
-                         * bu film-spesifik sayfayı ikinci kaynak olarak çöz.
-                         */
                         val movieEmbedCandidates =
                             Regex(
                                 """https://hdfilmcehennemi\.mobi/video/embed/[^"'`<>\s]+""",
@@ -2754,16 +2602,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         }
                     }
 
-                    /*
-                     * ------------------------------------------------
-                     * 2. CUSTOM RPLAYER ARRAY DECODER
-                     * ------------------------------------------------
-                     *
-                     * Güncel hdfilmcehennemi.mobi embed'inde JSON-LD
-                     * içindeki master.txt stale olabiliyor. Bu yüzden
-                     * genel URL taramasından ÖNCE packed JS'in ikinci
-                     * vwt(array) katmanını çöz.
-                     */
                     val unpackedForCustomDecoder =
                         unpackPackedJavaScript(
                             html
@@ -2788,20 +2626,9 @@ class HdFilmCehennemiProvider : MainAPI() {
                         }
                     }
 
-                    /*
-                     * ------------------------------------------------
-                     * 3. Doğrudan M3U8
-                     * ------------------------------------------------
-                     */
-
                     findVideoUrlInText(
                         html
                     )?.takeUnless {
-                        /*
-                         * Bu player sürümünde JSON-LD içindeki master.txt
-                         * bilinen şekilde 404 dönüyor. Gerçek medya bulunursa
-                         * custom decoder zaten yukarıda onu döndürüyor.
-                         */
                         it.contains(
                             "master.txt",
                             ignoreCase = true
@@ -2812,12 +2639,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         )
                         return it
                     }
-
-                    /*
-                     * ------------------------------------------------
-                     * 2. YENİ INLINE DC DECODER
-                     * ------------------------------------------------
-                     */
 
                     val inlineDecoders =
                         parseInlineDecoders(
@@ -2869,12 +2690,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             )
                         }
                     }
-
-                    /*
-                     * ------------------------------------------------
-                     * 3. LEGACY PACKED JS
-                     * ------------------------------------------------
-                     */
 
                     val packedRegex =
                         Regex(
@@ -2968,12 +2783,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                         }
                     }
 
-                    /*
-                     * ------------------------------------------------
-                     * 4. dc_ çağrısını doğrudan HTML içinde ara
-                     * ------------------------------------------------
-                     */
-
                     val directPartsRegex =
                         Regex(
                             """dc_\w+\(\[([^\]]+)\]\)"""
@@ -3011,12 +2820,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             return decoded
                         }
                     }
-
-                    /*
-                     * ------------------------------------------------
-                     * 5. JSON-LD
-                     * ------------------------------------------------
-                     */
 
                     val jsonLdMatch =
                         Regex(
@@ -3083,12 +2886,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 }
             }
 
-            /*
-             * ========================================================
-             * IFRAME'LERİ DENE
-             * ========================================================
-             */
-
             var videoUrl: String? =
                 null
 
@@ -3150,12 +2947,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 }
             }
 
-            /*
-             * ========================================================
-             * ALTERNATİF PLAYER
-             * ========================================================
-             */
-
             if (
                 videoUrl == null ||
                     videoUrl?.contains("master.txt", ignoreCase = true) == true
@@ -3176,18 +2967,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             continue
                         }
 
-                        /*
-                         * movie.js'in gerçek akışını burada birebir takip et:
-                         *
-                         *   GET /video/{data-video}/
-                         *   -> JSON { data: { html: "<iframe ...>" } }
-                         *   -> data.html içindeki iframe[data-src]
-                         *
-                         * Önceki sürüm data-video değerini doğrudan
-                         * /video/embed/{filmId}/?rapidrame_id=... URL'sine
-                         * çeviriyordu. Bu, güncel sitede yanlış/stale player
-                         * katmanına gidebiliyordu.
-                         */
                         val alternativeId =
                             alternative.videoId
                                 ?.trim()
@@ -3308,12 +3087,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                     }
             }
 
-            /*
-             * ========================================================
-             * VIDEO YOK
-             * ========================================================
-             */
-
             if (videoUrl.isNullOrBlank()) {
 
                 println(
@@ -3323,28 +3096,6 @@ class HdFilmCehennemiProvider : MainAPI() {
 
                 return false
             }
-
-            /*
-             * ========================================================
-             * MASTER.TXT -> GERÇEK HLS PLAYLIST
-             *
-             * Logcat'te Rapidrame bize örneğin:
-             *
-             * https://hls8.playmix.uno/hls/...mp4/master.txt
-             *
-             * döndürüyor. Bu adres CloudStream'in M3u8Helper'ına
-             * doğrudan verildiğinde playlist olarak kabul edilmiyor.
-             *
-             * Bu nedenle master.txt önce GET ediliyor. İçeriği:
-             * - gerçek bir #EXTM3U playlist ise aynı URL,
-             * - başka bir .m3u8 URL'si ise o URL,
-             * - JSON/HTML/JS içinde bir playlist URL'si ise bulunan URL
-             * olarak çözülüyor.
-             *
-             * Böylece master.txt hiçbir zaman doğrudan M3u8Helper'a
-             * gönderilmiyor.
-             * ========================================================
-             */
 
             suspend fun resolveMasterPlaylist(
                 rawUrl: String,
@@ -3446,11 +3197,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             "HDFilmCehennemi: playlist body[0..700] -> $preview"
                         )
 
-                        /*
-                         * Gerçek HLS playlist'i.
-                         * master.txt'in kendisi aslında HLS ise doğrudan
-                         * aynı URL'yi CloudStream'e verebiliriz.
-                         */
                         if (
                             body.startsWith("#EXTM3U") ||
                             body.contains("#EXT-X-STREAM-INF") ||
@@ -3473,11 +3219,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                                 .replace("\\u003D", "=")
                                 .trim()
 
-                        /*
-                         * JSON / HTML / JS içindeki mutlak playlist URL'leri.
-                         * İlk sırada .m3u8, sonra master/index/playlist gibi
-                         * HLS isimleri aranır.
-                         */
                         val absolutePlaylistPatterns =
                             listOf(
                                 Regex(
@@ -3517,9 +3258,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             return@repeat
                         }
 
-                        /*
-                         * Yanıt yalnızca bir URL ise onu da takip et.
-                         */
                         val plainUrl =
                             normalizedBody
                                 .lineSequence()
@@ -3544,11 +3282,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             return@repeat
                         }
 
-                        /*
-                         * Göreli .m3u8 / playlist URL'si.
-                         * URI.resolve(), ../ ve query/hash durumlarını da
-                         * doğru şekilde ele alır.
-                         */
                         val relativePlaylist =
                             Regex(
                                 """(?:^|[\"' =:])(\.?\.?/[^\"'<>\s]+\.(?:m3u8|txt)(?:\?[^\"'<>\s]*)?)""",
@@ -3581,11 +3314,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                             }
                         }
 
-                        /*
-                         * JSON/JS içinde uzantısız ama açıkça playlist'e işaret
-                         * eden URL'leri yakala. Bu özellikle master.txt'in JSON
-                         * döndürdüğü durumlar için.
-                         */
                         val genericUrlPattern =
                             Regex(
                                 """https?://[^\"'`<>\s]+""",
@@ -3645,12 +3373,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 return null
             }
 
-            /*
-             * ========================================================
-             * NULLABLE -> STRING
-             * ========================================================
-             */
-
             val rawResolvedVideoUrl: String =
                 cleanVideoUrl(
                     videoUrl
@@ -3706,18 +3428,6 @@ class HdFilmCehennemiProvider : MainAPI() {
                 return false
             }
 
-            /*
-             * ========================================================
-             * KULLANILAN IFRAME'İN ORIGIN'İNİ BUL
-             *
-             * ÖNEMLİ:
-             *
-             * Önceden her Rapidrame için .ws kullanıyorduk.
-             * Güncel sistemde ise iframe'in gerçek origin'i
-             * kullanılmalı.
-             * ========================================================
-             */
-
             fun getOrigin(
                 url: String?
             ): String {
@@ -3755,12 +3465,6 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             val streamOrigin =
                 embedOrigin
-
-            /*
-             * ========================================================
-             * RAPIDRAME BİLGİSİ
-             * ========================================================
-             */
 
             val isRapidrame =
                 usedIframe?.contains(
@@ -3816,48 +3520,281 @@ class HdFilmCehennemiProvider : MainAPI() {
 
             /*
              * ========================================================
-             * CLOUDSTREAM STREAM
+             * STREAM HEADERS
              * ========================================================
              */
 
             val streamHeaders =
-    mapOf(
-        "User-Agent" to userAgent,
-        "Referer" to streamReferer,
-        "Origin" to streamOrigin,
-        "Accept" to "*/*"
-    )
+                mapOf(
+                    "User-Agent" to userAgent,
+                    "Referer" to streamReferer,
+                    "Origin" to streamOrigin,
+                    "Accept" to "*/*"
+                )
 
-try {
-
-    M3u8Helper
-        .generateM3u8(
-            name =
+            val sourceName =
                 if (isRapidrame) {
                     "Rapidrame HLS"
                 } else {
                     "HDFilmCehennemi HLS"
-                },
-            streamUrl = resolvedVideoUrl,
-            referer = streamReferer,
-            headers = streamHeaders,
-            source = this.name
-        )
-        .forEach { extractorLink ->
+                }
 
-            callback(
-                extractorLink
-            )
-        }
+            /*
+             * ========================================================
+             * MASTER PLAYLIST VARYANTLARINI AYRI AYRI SUN
+             *
+             * ÖNEMLİ:
+             *
+             * Önceden burada doğrudan M3u8Helper.generateM3u8 çağrılıyordu.
+             * CloudStream'in M3u8Helper'ı master içindeki tek bir varyantı
+             * seçip onu tek ExtractorLink olarak döndürüyordu. Bu yüzden
+             * kalite menüsünde 480p dışında seçenek çıkmıyordu.
+             *
+             * Şimdi master.m3u8 içindeki HER #EXT-X-STREAM-INF satırını
+             * ayrı bir ExtractorLink olarak callback'e veriyoruz. Böylece
+             * 1080p / 720p / 480p / 360p gibi tüm varyantlar kalite
+             * menüsünde görünür. Medya playlist (tek kalite) durumunda
+             * eski M3u8Helper davranışına düşeriz.
+             * ========================================================
+             */
 
-} catch (error: Exception) {
+            var emittedAny = false
 
-    println(
-        "HDFilmCehennemi: M3U8 generate hatası -> " +
-            "${error::class.simpleName}: " +
-            error.message
-    )
-}
+            try {
+
+                val playlistResponse =
+                    app.get(
+                        resolvedVideoUrl,
+                        headers = streamHeaders
+                    )
+
+                val playlistBody =
+                    playlistResponse.text
+
+                if (
+                    playlistBody.contains(
+                        "#EXT-X-STREAM-INF",
+                        ignoreCase = true
+                    )
+                ) {
+
+                    data class VariantInfo(
+                        val url: String,
+                        val height: Int,
+                        val bandwidth: Long,
+                        val label: String
+                    )
+
+                    val variants =
+                        mutableListOf<VariantInfo>()
+
+                    val baseDirectory =
+                        resolvedVideoUrl.substringBeforeLast("/") + "/"
+
+                    val schemeHost =
+                        try {
+                            val scheme =
+                                resolvedVideoUrl.substringBefore("://")
+                            val host =
+                                resolvedVideoUrl
+                                    .substringAfter("://")
+                                    .substringBefore("/")
+                            "$scheme://$host"
+                        } catch (_: Exception) {
+                            ""
+                        }
+
+                    val allLines =
+                        playlistBody.lines()
+
+                    var lineIndex = 0
+                    while (lineIndex < allLines.size) {
+
+                        val line =
+                            allLines[lineIndex].trim()
+
+                        if (line.startsWith("#EXT-X-STREAM-INF:", ignoreCase = true)) {
+
+                            val height =
+                                Regex(
+                                    """RESOLUTION=\d+x(\d+)""",
+                                    setOf(RegexOption.IGNORE_CASE)
+                                )
+                                    .find(line)
+                                    ?.groupValues
+                                    ?.getOrNull(1)
+                                    ?.toIntOrNull() ?: 0
+
+                            val bandwidth =
+                                Regex(
+                                    """BANDWIDTH=(\d+)""",
+                                    setOf(RegexOption.IGNORE_CASE)
+                                )
+                                    .find(line)
+                                    ?.groupValues
+                                    ?.getOrNull(1)
+                                    ?.toLongOrNull() ?: 0L
+
+                            val nameAttr =
+                                Regex(
+                                    """NAME="([^"]+)"""",
+                                    setOf(RegexOption.IGNORE_CASE)
+                                )
+                                    .find(line)
+                                    ?.groupValues
+                                    ?.getOrNull(1)
+                                    ?.trim()
+                                    .orEmpty()
+
+                            var lookahead =
+                                lineIndex + 1
+
+                            while (
+                                lookahead < allLines.size &&
+                                allLines[lookahead].trim().startsWith("#")
+                            ) {
+                                lookahead++
+                            }
+
+                            val next =
+                                allLines
+                                    .getOrNull(lookahead)
+                                    ?.trim()
+                                    .orEmpty()
+
+                            if (
+                                next.isNotEmpty() &&
+                                !next.startsWith("#")
+                            ) {
+
+                                val absolute =
+                                    when {
+                                        next.startsWith("http") -> next
+                                        next.startsWith("/") -> schemeHost + next
+                                        else -> baseDirectory + next
+                                    }
+
+                                val label =
+                                    when {
+                                        height > 0 -> "${height}p"
+                                        nameAttr.isNotEmpty() -> nameAttr
+                                        else -> "Auto"
+                                    }
+
+                                variants.add(
+                                    VariantInfo(
+                                        url = absolute,
+                                        height = height,
+                                        bandwidth = bandwidth,
+                                        label = label
+                                    )
+                                )
+
+                                lineIndex = lookahead
+                            }
+                        }
+
+                        lineIndex++
+                    }
+
+                    println(
+                        "HDFilmCehennemi: master içindeki varyant sayısı = " +
+                            variants.size
+                    )
+
+                    variants
+                        .sortedWith(
+                            compareByDescending<VariantInfo> { it.height }
+                                .thenByDescending { it.bandwidth }
+                        )
+                        .forEach { variant ->
+
+                            val qualityValue =
+                                when {
+                                    variant.height >= 2160 -> Qualities.P2160.value
+                                    variant.height >= 1440 -> Qualities.P1440.value
+                                    variant.height >= 1080 -> Qualities.P1080.value
+                                    variant.height >= 720 -> Qualities.P720.value
+                                    variant.height >= 480 -> Qualities.P480.value
+                                    variant.height >= 360 -> Qualities.P360.value
+                                    variant.height >= 240 -> Qualities.P240.value
+                                    else -> Qualities.Unknown.value
+                                }
+
+                            println(
+                                "HDFilmCehennemi: varyant -> " +
+                                    "label=${variant.label} | " +
+                                    "height=${variant.height} | " +
+                                    "bandwidth=${variant.bandwidth} | " +
+                                    "url=${variant.url}"
+                            )
+
+                            callback(
+                                newExtractorLink(
+                                    source = sourceName,
+                                    name = "$sourceName ${variant.label}",
+                                    url = variant.url
+                                ) {
+                                    this.referer = streamReferer
+                                    this.type = ExtractorLinkType.M3U8
+                                    this.headers = streamHeaders
+                                    this.quality = qualityValue
+                                }
+                            )
+
+                            emittedAny = true
+                        }
+                }
+
+                if (!emittedAny) {
+
+                    println(
+                        "HDFilmCehennemi: master değil veya varyant yok, " +
+                            "M3u8Helper fallback kullanılıyor"
+                    )
+
+                    M3u8Helper
+                        .generateM3u8(
+                            name = sourceName,
+                            streamUrl = resolvedVideoUrl,
+                            referer = streamReferer,
+                            headers = streamHeaders,
+                            source = this.name
+                        )
+                        .forEach { extractorLink ->
+                            callback(extractorLink)
+                            emittedAny = true
+                        }
+                }
+
+            } catch (error: Exception) {
+
+                println(
+                    "HDFilmCehennemi: master parse hatası -> " +
+                        "${error::class.simpleName}: ${error.message}"
+                )
+
+                try {
+                    M3u8Helper
+                        .generateM3u8(
+                            name = sourceName,
+                            streamUrl = resolvedVideoUrl,
+                            referer = streamReferer,
+                            headers = streamHeaders,
+                            source = this.name
+                        )
+                        .forEach { extractorLink ->
+                            callback(extractorLink)
+                            emittedAny = true
+                        }
+                } catch (fallbackError: Exception) {
+                    println(
+                        "HDFilmCehennemi: M3U8 generate hatası -> " +
+                            "${fallbackError::class.simpleName}: " +
+                            fallbackError.message
+                    )
+                }
+            }
 
             true
 

@@ -3729,18 +3729,17 @@ class HdFilmCehennemiProvider : MainAPI() {
                                     "url=${variant.url}"
                             )
 
-                            callback(
-                                newExtractorLink(
-                                    source = sourceName,
-                                    name = "$sourceName ${variant.label}",
-                                    url = variant.url
-                                ) {
-                                    this.referer = streamReferer
-                                    this.type = ExtractorLinkType.M3U8
-                                    this.headers = streamHeaders
-                                    this.quality = qualityValue
-                                }
-                            )
+                 callback(
+                  ExtractorLink(
+                   source = sourceName,
+                   name = "$sourceName ${variant.label}",
+                   url = variant.url,
+                   referer = streamReferer,
+                   quality = qualityValue,
+                   headers = streamHeaders,
+                   type = ExtractorLinkType.M3U8
+                  )
+                 )
 
                             emittedAny = true
                         }

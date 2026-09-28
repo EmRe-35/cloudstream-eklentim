@@ -1,0 +1,11 @@
+{
+  "name": "Yabancı Dizi",
+  "description": "yabancidizi.news sitesi için Cloudstream eklentisi",
+  "author": "EmRe-35",
+  "repositoryUrl": "https://github.com/EmRe-35/cloudstream-eklentim",
+  "version": 1,
+  "requiresResources": false,
+  "tvTypes": ["TvSeries", "Movie"],
+  "language": "tr",
+  "pluginClassName": "com.example.yabancidizi.YabanciDiziProvider"
+}

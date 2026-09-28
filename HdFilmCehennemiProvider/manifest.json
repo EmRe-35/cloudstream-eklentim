@@ -1,0 +1,10 @@
+{
+  "name": "HdFilmCehennemi",
+  "description": "HdFilmCehennemi sitesi için Cloudstream eklentisi",
+  "author": "EmRe-35",
+  "repositoryUrl": "https://github.com/EmRe-35/cloudstream-eklentim",
+  "version": 1,
+  "requiresResources": false,
+  "tvTypes": ["Movie", "TvSeries"],
+  "language": "tr"
+}

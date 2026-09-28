@@ -9,12 +9,6 @@ import org.jsoup.nodes.Element
 class YabanciDiziProvider : MainAPI() {
     override var mainUrl = "https://yabancidizi.news"
     override var name = "Yabancı Dizi"
-    // ... geri kalan kod aynı
-}
-
-class YabanciDiziProvider : MainAPI() {
-    override var mainUrl = "https://yabancidizi.news"
-    override var name = "Yabancı Dizi"
     override val hasMainPage = true
     override var lang = "tr"
     override val hasDownloadSupport = true
@@ -34,14 +28,13 @@ class YabanciDiziProvider : MainAPI() {
 
         val items = mutableListOf<HomePageList>()
 
-        // Ana sayfadaki posterleri çek (birden fazla seçici deniyoruz)
         val posters = (
             document.select("div.poster-media a") +
             document.select("li.mofy-moviesli a") +
             document.select("ul.clearfix li a[href*=/dizi/], ul.clearfix li a[href*=/film/]") +
             document.select("div.featured-segment a")
         )
-            .mapNotNull { it.toSearchResult() }
+            .mapNotNull { convertToSearchResponse(it) }
             .distinctBy { it.url }
 
         if (posters.isNotEmpty()) {
@@ -51,15 +44,15 @@ class YabanciDiziProvider : MainAPI() {
         return newHomePageResponse(items, hasNext = false)
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val href = this.attr("href").takeIf { it.isNotBlank() && !it.startsWith("#") } ?: return null
-        val title = this.attr("title").takeIf { it.isNotBlank() }
-            ?: this.selectFirst("h2")?.text()?.trim()
-            ?: this.selectFirst("h6")?.text()?.trim()
-            ?: this.selectFirst("img")?.attr("alt")?.trim()
+    private fun convertToSearchResponse(element: Element): SearchResponse? {
+        val href = element.attr("href").takeIf { it.isNotBlank() && !it.startsWith("#") } ?: return null
+        val title = element.attr("title").takeIf { it.isNotBlank() }
+            ?: element.selectFirst("h2")?.text()?.trim()
+            ?: element.selectFirst("h6")?.text()?.trim()
+            ?: element.selectFirst("img")?.attr("alt")?.trim()
             ?: return null
 
-        val poster = this.selectFirst("img")?.let { img ->
+        val poster = element.selectFirst("img")?.let { img ->
             img.attr("data-src").ifBlank { img.attr("src") }
         }
 
@@ -78,14 +71,12 @@ class YabanciDiziProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        // Sitenin SPA yapısı nedeniyle bu endpoint çalışmayabilir.
-        // Network sekmesinden gerçek arama API'sini bulup buraya yazın.
         val searchUrl = "$mainUrl/search?q=${query.replace(" ", "+")}"
         return try {
             val document = app.get(searchUrl).document
             (document.select("a[href*=/dizi/], a[href*=/film/]") +
              document.select("div.search-result a, li.result a"))
-                .mapNotNull { it.toSearchResult() }
+                .mapNotNull { convertToSearchResponse(it) }
                 .distinctBy { it.url }
         } catch (e: Exception) {
             emptyList()
@@ -108,7 +99,6 @@ class YabanciDiziProvider : MainAPI() {
         val isMovie = url.contains("/film/")
 
         val episodes = if (isMovie) {
-            // Filmler tek bölüm olarak eklenir
             listOf(
                 newEpisode(url) {
                     this.name = title
@@ -116,7 +106,6 @@ class YabanciDiziProvider : MainAPI() {
                 }
             )
         } else {
-            // Dizi bölümlerini çek
             parseEpisodes(document, url)
         }
 
@@ -134,54 +123,52 @@ class YabanciDiziProvider : MainAPI() {
     }
 
     private suspend fun parseEpisodes(document: org.jsoup.nodes.Document, seriesUrl: String): List<Episode> {
-    val episodes = mutableListOf<Episode>()
-    val episodeLinks = mutableListOf<org.jsoup.nodes.Element>()
+        val episodes = mutableListOf<Episode>()
+        val episodeLinks = mutableListOf<Element>()
 
-    // Doğrudan bölüm linklerini ara
-    episodeLinks.addAll(document.select("a[href*=/bolum-]"))
+        episodeLinks.addAll(document.select("a[href*=/bolum-]"))
 
-    // Eğer hiç bölüm linki yoksa, sezon sayfalarına gidip bölümleri çek
-    if (episodeLinks.isEmpty()) {
-        val seasonLinks = document.select("a[href*=/sezon-]")
-            .map { it.attr("href") }
-            .distinct()
+        if (episodeLinks.isEmpty()) {
+            val seasonLinks = document.select("a[href*=/sezon-]")
+                .map { it.attr("href") }
+                .distinct()
 
-        seasonLinks.forEach { seasonHref ->
-            val seasonUrl = if (seasonHref.startsWith("http")) seasonHref
-                            else "$mainUrl/${seasonHref.trimStart('/')}"
-            val seasonDoc = try {
-                app.get(seasonUrl).document
-            } catch (e: Exception) {
-                return@forEach
-            }
-            episodeLinks.addAll(seasonDoc.select("a[href*=/bolum-]"))
-        }
-    }
-
-    episodeLinks.distinctBy { it.attr("href") }.forEachIndexed { index, el ->
-        val href = el.attr("href")
-        val epUrl = if (href.startsWith("http")) href
-                    else "$mainUrl/${href.trimStart('/')}"
-
-        val episodeNumber = Regex("""bolum-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
-        val seasonNumber = Regex("""sezon-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
-
-        val epTitle = el.selectFirst("h2, h6, .episode-no")?.text()?.trim()
-            ?: el.text().trim().take(50)
-
-        episodes.add(
-            newEpisode(epUrl) {
-                this.name = epTitle.ifBlank {
-                    "S${seasonNumber ?: 1} B${episodeNumber ?: (index + 1)}"
+            for (seasonHref in seasonLinks) {
+                val seasonUrl = if (seasonHref.startsWith("http")) seasonHref
+                                else "$mainUrl/${seasonHref.trimStart('/')}"
+                try {
+                    val seasonDoc = app.get(seasonUrl).document
+                    episodeLinks.addAll(seasonDoc.select("a[href*=/bolum-]"))
+                } catch (e: Exception) {
+                    // Sezon sayfası yüklenemezse atla
                 }
-                this.episode = episodeNumber ?: (index + 1)
-                this.season = seasonNumber ?: 1
             }
-        )
-    }
+        }
 
-    return episodes
-}
+        episodeLinks.distinctBy { it.attr("href") }.forEachIndexed { index, el ->
+            val href = el.attr("href")
+            val epUrl = if (href.startsWith("http")) href
+                        else "$mainUrl/${href.trimStart('/')}"
+
+            val episodeNumber = Regex("""bolum-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
+            val seasonNumber = Regex("""sezon-(\d+)""").find(href)?.groupValues?.get(1)?.toIntOrNull()
+
+            val epTitle = el.selectFirst("h2, h6, .episode-no")?.text()?.trim()
+                ?: el.text().trim().take(50)
+
+            episodes.add(
+                newEpisode(epUrl) {
+                    this.name = epTitle.ifBlank {
+                        "S${seasonNumber ?: 1} B${episodeNumber ?: (index + 1)}"
+                    }
+                    this.episode = episodeNumber ?: (index + 1)
+                    this.season = seasonNumber ?: 1
+                }
+            )
+        }
+
+        return episodes
+    }
 
     override suspend fun loadLinks(
         data: String,
@@ -192,7 +179,6 @@ class YabanciDiziProvider : MainAPI() {
         val document = app.get(data).document
         var found = false
 
-        // iframe'leri bul
         document.select("iframe[src], iframe[data-src]").forEach { iframe ->
             val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }
             if (src.isNotBlank() && (src.startsWith("http") || src.startsWith("//"))) {
@@ -200,16 +186,6 @@ class YabanciDiziProvider : MainAPI() {
                 loadExtractor(fullSrc, data, subtitleCallback, callback)
                 found = true
             }
-        }
-
-        // Bazı siteler rapidrame_id parametresi kullanır — onu da deneyelim
-        val rapidrameId = Regex("""rapidrame_id=([a-zA-Z0-9]+)""")
-            .find(document.html())?.groupValues?.get(1)
-
-        if (rapidrameId != null) {
-            val embedUrl = "https://dbx.molystream.org/embed/$rapidrameId/q/1"
-            loadExtractor(embedUrl, data, subtitleCallback, callback)
-            found = true
         }
 
         return found
